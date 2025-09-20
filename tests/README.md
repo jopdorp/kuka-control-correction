@@ -1,45 +1,18 @@
 # Tests for KUKA Vision Correction System
 
-This directory contains unit tests and integration tests for the vision correction system.
+Minimal suite kept for now. Legacy tests against an older API were removed.
 
-## Running Tests
+## Run
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run all tests
-pytest
-
-# Run tests with coverage
-pytest --cov=raspberry-pi/src --cov-report=html
-
-# Run specific test file
-pytest tests/test_aruco_detector.py
-
-# Run tests with verbose output
-pytest -v
+pytest -q
 ```
 
-## Test Structure
+## Notes
 
-- `test_aruco_detector.py` - Tests for ArUco marker detection
-- `test_pose_utils.py` - Tests for pose utilities and coordinate transforms
-- `test_vision_system.py` - Tests for the main vision correction system
-- `test_integration.py` - Integration tests for the complete system
-- `conftest.py` - Shared test fixtures and configuration
-
-## Test Data
-
-The `test_data/` directory contains sample images and calibration data for testing:
-- Sample ArUco marker images
-- Camera calibration parameters
-- Known marker positions for validation
-
-## Mocking
-
-Tests use mocking for:
-- Camera hardware (no physical camera required)
-- Network connections (TCP sockets)
-- File I/O operations
-- OpenCV operations where appropriate
+- Only `pose_utils` unit tests are retained. They use the current API:
+	- `pose_to_T(translation_mm: np.ndarray, rotation_abc_deg: np.ndarray)`
+	- `invert_T(T: np.ndarray)`
+	- `kuka_abc_to_rotation_matrix` / `rotation_matrix_to_kuka_abc`
+- `conftest.py` adds `raspberry-pi/src` to `PYTHONPATH` for imports.
+- ArUco and system tests will be reintroduced later with proper mocks.

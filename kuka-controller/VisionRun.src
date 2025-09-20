@@ -8,10 +8,14 @@ DEF VisionRun()
 ; SPS continuously applies vision corrections in the background
 
 DECL INT I
+DECL FRAME ORIGINAL_BASE  ; Store original base for restoration
 
 ; Initialize motion system
 $ADVANCE = 1    ; Allowed since $BASE is recomputed every SPS cycle
 BAS(#INITMOV, 0)
+
+; Store original base frame for restoration at end
+ORIGINAL_BASE = $BASE
 
 ; Capture reference base frame (do this once at start)
 BASE_REF = $BASE
@@ -27,6 +31,8 @@ PTP HOME VEL=50
 
 ; Example motion sequence with continuous correction
 FOR I = 1 TO 5
+    ; Ensure correction is enabled while running this sequence
+    G_CORR_ENABLE = TRUE
     ; Linear moves - vision correction applied automatically by SPS
     LIN P_APPROACH[I] C_DIS VEL=100
     LIN P_WORK[I] C_DIS VEL=50
@@ -41,7 +47,12 @@ ENDFOR
 ; Return home
 PTP HOME VEL=50
 
-; Optional: disable correction by zeroing
-; G_CORR_FILT = {X 0,Y 0,Z 0,A 0,B 0,C 0}
+; Disable vision correction and restore original base
+G_CORR_ENABLE = FALSE
+G_CORR_FILT = {X 0,Y 0,Z 0,A 0,B 0,C 0}
+G_CORR_VALID = FALSE
+
+; Restore original base coordinate system
+$BASE = ORIGINAL_BASE
 
 END

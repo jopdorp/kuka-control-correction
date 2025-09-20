@@ -4,296 +4,265 @@ Tests for pose utilities and coordinate transformations.
 
 import pytest
 import numpy as np
-from unittest.mock import Mock
 
 # Import the module under test
 from pose_utils import (
-    Pose, pose_to_T, T_to_pose, invert_T, compose_T,
-    rotation_matrix_to_kuka_abc, kuka_abc_to_rotation_matrix,
-    apply_transform, transform_pose
+    RobotPose, MoveCommand,
+    pose_to_T, invert_T,
+    rotation_matrix_to_kuka_abc, kuka_abc_to_rotation_matrix
 )
 
 
-class TestPoseClass:
-    """Test cases for Pose dataclass."""
+class TestRobotPose:
+    """Test cases for RobotPose dataclass."""
 
-    def test_pose_creation(self):
-        """Test Pose object creation."""
-        pose = Pose(
-            x=100.0, y=200.0, z=300.0,
-            rx=0.1, ry=0.2, rz=0.3
+    def test_robot_pose_creation(self):
+        """Test RobotPose creation with valid inputs."""
+        translation = np.array([100.0, 200.0, 300.0])
+        rotation = np.array([10.0, 20.0, 30.0])
+        rotation_matrix = kuka_abc_to_rotation_matrix(rotation)
+        
+        pose = RobotPose(
+            translation=translation,
+            rotation=rotation,
+            rotation_matrix=rotation_matrix
         )
         
-        assert pose.x == 100.0
-        assert pose.y == 200.0
-        assert pose.z == 300.0
-        assert pose.rx == 0.1
-        assert pose.ry == 0.2
-        assert pose.rz == 0.3
+        assert np.allclose(pose.translation, translation)
+        assert np.allclose(pose.rotation, rotation)
+        assert np.allclose(pose.rotation_matrix, rotation_matrix)
+        assert pose.frame == "BASE"
 
-    def test_pose_default_values(self):
-        """Test Pose with default values."""
-        pose = Pose()
+    def test_robot_pose_custom_frame(self):
+        """Test RobotPose with custom frame."""
+        translation = np.array([0.0, 0.0, 0.0])
+        rotation = np.array([0.0, 0.0, 0.0])
+        rotation_matrix = np.eye(3)
         
-        assert pose.x == 0.0
-        assert pose.y == 0.0
-        assert pose.z == 0.0
-        assert pose.rx == 0.0
-        assert pose.ry == 0.0
-        assert pose.rz == 0.0
+        pose = RobotPose(
+            translation=translation,
+            rotation=rotation,
+            rotation_matrix=rotation_matrix,
+            frame="TOOL"
+        )
+        
+        assert pose.frame == "TOOL"
 
 
-class TestTransformationMatrix:
-    """Test cases for transformation matrix operations."""
+class TestMoveCommand:
+    """Test cases for MoveCommand dataclass."""
 
-    def test_pose_to_T_identity(self):
-        """Test conversion of identity pose to transformation matrix."""
-        pose = Pose()
-        T = pose_to_T(pose)
+    def test_move_command_creation(self):
+        """Test MoveCommand creation."""
+        pose = RobotPose(
+            translation=np.array([100.0, 200.0, 300.0]),
+            rotation=np.array([0.0, 0.0, 0.0]),
+            rotation_matrix=np.eye(3)
+        )
+        
+        command = MoveCommand(
+            command_type="PTP",
+            target_pose=pose,
+            velocity=50.0,
+            acceleration=100.0
+        )
+        
+        assert command.command_type == "PTP"
+        assert command.target_pose == pose
+        assert command.velocity == 50.0
+        assert command.acceleration == 100.0
+        assert command.tool_data is None
+        assert command.base_data is None
+
+
+class TestRotationConversions:
+    """Test rotation matrix to/from KUKA ABC conversions."""
+
+    def test_identity_rotation(self):
+        """Test identity rotation conversion."""
+        abc = np.array([0.0, 0.0, 0.0])
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        
+        assert np.allclose(rot_mat, np.eye(3))
+        
+        # Convert back
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
+        assert np.allclose(abc_recovered, abc, atol=1e-10)
+
+    def test_simple_rotations(self):
+        """Test simple axis rotations."""
+        # 90 degree rotation around Z (A axis)
+        abc = np.array([90.0, 0.0, 0.0])
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
+        
+        assert np.allclose(abc_recovered, abc, atol=1e-10)
+
+    def test_combined_rotations(self):
+        """Test combined rotations."""
+        abc = np.array([30.0, 45.0, 60.0])
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
+        
+        assert np.allclose(abc_recovered, abc, atol=1e-8)
+
+    def test_orthogonality(self):
+        """Test that rotation matrices are orthogonal."""
+        abc = np.array([45.0, 30.0, 60.0])
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        
+        # Check orthogonality: R @ R.T should be identity
+        should_be_identity = rot_mat @ rot_mat.T
+        assert np.allclose(should_be_identity, np.eye(3))
+        
+        # Check determinant should be 1
+        assert np.allclose(np.linalg.det(rot_mat), 1.0)
+
+
+class TestPoseToT:
+    """Test pose to transformation matrix conversion."""
+
+    def test_identity_transform(self):
+        """Test identity transformation."""
+        translation = np.array([0.0, 0.0, 0.0])
+        rotation = np.array([0.0, 0.0, 0.0])
+        
+        T = pose_to_T(translation, rotation)
         
         expected = np.eye(4)
         assert np.allclose(T, expected)
 
-    def test_pose_to_T_translation_only(self):
-        """Test conversion with translation only."""
-        pose = Pose(x=100.0, y=200.0, z=300.0)
-        T = pose_to_T(pose)
+    def test_translation_only(self):
+        """Test pure translation."""
+        translation = np.array([100.0, 200.0, 300.0])
+        rotation = np.array([0.0, 0.0, 0.0])
         
-        expected = np.array([
-            [1, 0, 0, 100.0],
-            [0, 1, 0, 200.0],
-            [0, 0, 1, 300.0],
-            [0, 0, 0, 1]
-        ])
+        T = pose_to_T(translation, rotation)
+        
+        expected = np.eye(4)
+        expected[:3, 3] = translation
         assert np.allclose(T, expected)
 
-    def test_pose_to_T_rotation_only(self):
-        """Test conversion with rotation only."""
-        # 90 degree rotation around Z axis
-        pose = Pose(rz=np.pi/2)
-        T = pose_to_T(pose)
+    def test_rotation_only(self):
+        """Test pure rotation."""
+        translation = np.array([0.0, 0.0, 0.0])
+        rotation = np.array([90.0, 0.0, 0.0])  # 90 degrees around Z
+        
+        T = pose_to_T(translation, rotation)
+        
+        # Should have rotation matrix in top-left 3x3
+        expected_rot = kuka_abc_to_rotation_matrix(rotation)
+        assert np.allclose(T[:3, :3], expected_rot)
+        assert np.allclose(T[:3, 3], translation)
+
+    def test_combined_transform(self):
+        """Test combined rotation and translation."""
+        translation = np.array([100.0, 200.0, 300.0])
+        rotation = np.array([30.0, 45.0, 60.0])
+        
+        T = pose_to_T(translation, rotation)
+        
+        # Check structure
+        assert T.shape == (4, 4)
+        assert np.allclose(T[3, :], [0, 0, 0, 1])
         
         # Check rotation part
-        expected_rotation = np.array([
-            [0, -1, 0],
-            [1, 0, 0],
-            [0, 0, 1]
-        ])
-        assert np.allclose(T[:3, :3], expected_rotation, atol=1e-15)
-        assert np.allclose(T[:3, 3], [0, 0, 0])
-
-    def test_T_to_pose_identity(self):
-        """Test conversion of identity matrix to pose."""
-        T = np.eye(4)
-        pose = T_to_pose(T)
+        expected_rot = kuka_abc_to_rotation_matrix(rotation)
+        assert np.allclose(T[:3, :3], expected_rot)
         
-        assert abs(pose.x) < 1e-15
-        assert abs(pose.y) < 1e-15
-        assert abs(pose.z) < 1e-15
-        assert abs(pose.rx) < 1e-15
-        assert abs(pose.ry) < 1e-15
-        assert abs(pose.rz) < 1e-15
+        # Check translation part
+        assert np.allclose(T[:3, 3], translation)
 
-    def test_pose_to_T_roundtrip(self):
-        """Test roundtrip conversion: pose -> T -> pose."""
-        original_pose = Pose(x=100.0, y=200.0, z=300.0, rx=0.1, ry=0.2, rz=0.3)
-        T = pose_to_T(original_pose)
-        recovered_pose = T_to_pose(T)
-        
-        assert abs(recovered_pose.x - original_pose.x) < 1e-10
-        assert abs(recovered_pose.y - original_pose.y) < 1e-10
-        assert abs(recovered_pose.z - original_pose.z) < 1e-10
-        assert abs(recovered_pose.rx - original_pose.rx) < 1e-10
-        assert abs(recovered_pose.ry - original_pose.ry) < 1e-10
-        assert abs(recovered_pose.rz - original_pose.rz) < 1e-10
 
-    def test_invert_T_identity(self):
-        """Test inversion of identity matrix."""
+class TestInvertT:
+    """Test transformation matrix inversion."""
+
+    def test_invert_identity(self):
+        """Test inverting identity matrix."""
         T = np.eye(4)
         T_inv = invert_T(T)
         
         assert np.allclose(T_inv, np.eye(4))
 
-    def test_invert_T_translation(self):
-        """Test inversion of translation-only matrix."""
-        T = np.array([
-            [1, 0, 0, 100],
-            [0, 1, 0, 200],
-            [0, 0, 1, 300],
-            [0, 0, 0, 1]
-        ], dtype=float)
+    def test_invert_translation(self):
+        """Test inverting pure translation."""
+        translation = np.array([100.0, 200.0, 300.0])
+        rotation = np.array([0.0, 0.0, 0.0])
         
+        T = pose_to_T(translation, rotation)
         T_inv = invert_T(T)
         
-        expected = np.array([
-            [1, 0, 0, -100],
-            [0, 1, 0, -200],
-            [0, 0, 1, -300],
-            [0, 0, 0, 1]
-        ], dtype=float)
-        
-        assert np.allclose(T_inv, expected)
+        # Should compose to identity
+        should_be_identity = T @ T_inv
+        assert np.allclose(should_be_identity, np.eye(4))
 
-    def test_invert_T_roundtrip(self):
-        """Test that T * invert(T) = I."""
-        pose = Pose(x=100.0, y=200.0, z=300.0, rx=0.1, ry=0.2, rz=0.3)
-        T = pose_to_T(pose)
+    def test_invert_rotation(self):
+        """Test inverting pure rotation."""
+        translation = np.array([0.0, 0.0, 0.0])
+        rotation = np.array([45.0, 30.0, 60.0])
+        
+        T = pose_to_T(translation, rotation)
         T_inv = invert_T(T)
         
-        result = T @ T_inv
-        assert np.allclose(result, np.eye(4))
+        # Should compose to identity
+        should_be_identity = T @ T_inv
+        assert np.allclose(should_be_identity, np.eye(4))
 
-    def test_compose_T_identity(self):
-        """Test composition with identity matrices."""
-        T1 = np.eye(4)
-        T2 = np.eye(4)
+    def test_invert_combined(self):
+        """Test inverting combined transformation."""
+        translation = np.array([100.0, 200.0, 300.0])
+        rotation = np.array([30.0, 45.0, 60.0])
         
-        result = compose_T(T1, T2)
-        assert np.allclose(result, np.eye(4))
-
-    def test_compose_T_translations(self):
-        """Test composition of translation matrices."""
-        T1 = pose_to_T(Pose(x=100.0, y=0.0, z=0.0))
-        T2 = pose_to_T(Pose(x=0.0, y=200.0, z=0.0))
+        T = pose_to_T(translation, rotation)
+        T_inv = invert_T(T)
         
-        result = compose_T(T1, T2)
-        expected_pose = Pose(x=100.0, y=200.0, z=0.0)
-        expected = pose_to_T(expected_pose)
+        # Should compose to identity both ways
+        should_be_identity1 = T @ T_inv
+        should_be_identity2 = T_inv @ T
         
-        assert np.allclose(result, expected)
+        assert np.allclose(should_be_identity1, np.eye(4))
+        assert np.allclose(should_be_identity2, np.eye(4))
 
-
-class TestKukaRotations:
-    """Test cases for KUKA ABC rotation conversions."""
-
-    def test_rotation_matrix_to_kuka_abc_identity(self):
-        """Test conversion of identity rotation matrix."""
-        R = np.eye(3)
-        a, b, c = rotation_matrix_to_kuka_abc(R)
+    def test_double_invert(self):
+        """Test that inverting twice gives original."""
+        translation = np.array([50.0, 100.0, 150.0])
+        rotation = np.array([15.0, 25.0, 35.0])
         
-        assert abs(a) < 1e-15
-        assert abs(b) < 1e-15
-        assert abs(c) < 1e-15
-
-    def test_kuka_abc_to_rotation_matrix_identity(self):
-        """Test conversion of zero ABC angles."""
-        R = kuka_abc_to_rotation_matrix(0.0, 0.0, 0.0)
+        T = pose_to_T(translation, rotation)
+        T_inv = invert_T(T)
+        T_double_inv = invert_T(T_inv)
         
-        assert np.allclose(R, np.eye(3))
+        assert np.allclose(T_double_inv, T)
 
-    def test_kuka_abc_roundtrip(self):
-        """Test roundtrip conversion: R -> ABC -> R."""
-        # Create rotation matrix for 45 degrees around Z
-        angle = np.pi / 4
-        R_original = np.array([
-            [np.cos(angle), -np.sin(angle), 0],
-            [np.sin(angle), np.cos(angle), 0],
-            [0, 0, 1]
-        ])
+
+class TestNumericalStability:
+    """Test numerical stability of transformations."""
+
+    def test_small_angles(self):
+        """Test very small rotation angles."""
+        abc = np.array([0.001, 0.002, 0.003])  # Very small angles
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
         
-        a, b, c = rotation_matrix_to_kuka_abc(R_original)
-        R_recovered = kuka_abc_to_rotation_matrix(a, b, c)
+        assert np.allclose(abc_recovered, abc, atol=1e-10)
+
+    def test_large_angles(self):
+        """Test large rotation angles."""
+        abc = np.array([179.0, 89.0, 179.0])  # Near singularities
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
         
-        assert np.allclose(R_recovered, R_original)
+        # Allow slightly larger tolerance for near-singularity cases
+        assert np.allclose(abc_recovered, abc, atol=1e-6)
 
-    def test_kuka_abc_specific_angles(self):
-        """Test specific known angle conversions."""
-        # 90 degrees around Z axis
-        R_z90 = np.array([
-            [0, -1, 0],
-            [1, 0, 0],
-            [0, 0, 1]
-        ])
+    def test_negative_angles(self):
+        """Test negative rotation angles."""
+        abc = np.array([-45.0, -30.0, -60.0])
+        rot_mat = kuka_abc_to_rotation_matrix(abc)
+        abc_recovered = rotation_matrix_to_kuka_abc(rot_mat)
         
-        a, b, c = rotation_matrix_to_kuka_abc(R_z90)
-        # For 90° rotation around Z, we expect C = 90°, A = B = 0°
-        assert abs(c - np.pi/2) < 1e-10
-        assert abs(a) < 1e-10
-        assert abs(b) < 1e-10
+        assert np.allclose(abc_recovered, abc, atol=1e-10)
 
 
-class TestTransformOperations:
-    """Test cases for transform application functions."""
-
-    def test_apply_transform_point_identity(self):
-        """Test applying identity transform to a point."""
-        T = np.eye(4)
-        point = np.array([100.0, 200.0, 300.0])
-        
-        result = apply_transform(T, point)
-        assert np.allclose(result, point)
-
-    def test_apply_transform_point_translation(self):
-        """Test applying translation to a point."""
-        T = pose_to_T(Pose(x=10.0, y=20.0, z=30.0))
-        point = np.array([100.0, 200.0, 300.0])
-        
-        result = apply_transform(T, point)
-        expected = np.array([110.0, 220.0, 330.0])
-        assert np.allclose(result, expected)
-
-    def test_apply_transform_point_rotation(self):
-        """Test applying rotation to a point."""
-        # 90 degree rotation around Z axis
-        T = pose_to_T(Pose(rz=np.pi/2))
-        point = np.array([100.0, 0.0, 0.0])
-        
-        result = apply_transform(T, point)
-        expected = np.array([0.0, 100.0, 0.0])
-        assert np.allclose(result, expected, atol=1e-15)
-
-    def test_transform_pose_identity(self):
-        """Test transforming pose with identity transform."""
-        T = np.eye(4)
-        pose = Pose(x=100.0, y=200.0, z=300.0, rx=0.1, ry=0.2, rz=0.3)
-        
-        result = transform_pose(T, pose)
-        
-        assert abs(result.x - pose.x) < 1e-15
-        assert abs(result.y - pose.y) < 1e-15
-        assert abs(result.z - pose.z) < 1e-15
-        assert abs(result.rx - pose.rx) < 1e-15
-        assert abs(result.ry - pose.ry) < 1e-15
-        assert abs(result.rz - pose.rz) < 1e-15
-
-    def test_transform_pose_translation(self):
-        """Test transforming pose with translation."""
-        T = pose_to_T(Pose(x=50.0, y=100.0, z=150.0))
-        pose = Pose(x=100.0, y=200.0, z=300.0)
-        
-        result = transform_pose(T, pose)
-        
-        assert abs(result.x - 150.0) < 1e-10
-        assert abs(result.y - 300.0) < 1e-10
-        assert abs(result.z - 450.0) < 1e-10
-
-
-class TestErrorHandling:
-    """Test error handling in pose utilities."""
-
-    def test_invalid_matrix_size(self):
-        """Test handling of invalid matrix sizes."""
-        # Test with 3x3 matrix instead of 4x4
-        invalid_T = np.eye(3)
-        
-        with pytest.raises(ValueError):
-            T_to_pose(invalid_T)
-
-    def test_invalid_point_dimensions(self):
-        """Test handling of invalid point dimensions."""
-        T = np.eye(4)
-        invalid_point = np.array([1, 2])  # 2D instead of 3D
-        
-        with pytest.raises(ValueError):
-            apply_transform(T, invalid_point)
-
-    def test_non_homogeneous_matrix(self):
-        """Test handling of non-homogeneous transformation matrix."""
-        # Create matrix with invalid bottom row
-        invalid_T = np.eye(4)
-        invalid_T[3, :] = [1, 2, 3, 4]  # Should be [0, 0, 0, 1]
-        
-        # Should still work but may give unexpected results
-        # This is more of a warning case than an error
-        result = T_to_pose(invalid_T)
-        assert isinstance(result, Pose)
+if __name__ == "__main__":
+    pytest.main([__file__])

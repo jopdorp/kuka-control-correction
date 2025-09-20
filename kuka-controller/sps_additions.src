@@ -44,7 +44,7 @@ IF G_CORR_VALID THEN
     G_CORR_RAW.B = _WrapDeg(G_CORR_RAW.B)
     G_CORR_RAW.C = _WrapDeg(G_CORR_RAW.C)
     
-    ; Safety clamps
+    ; Safety clamps for individual corrections
     G_CORR_RAW.X = _ClampReal(G_CORR_RAW.X, G_MAX_MM)
     G_CORR_RAW.Y = _ClampReal(G_CORR_RAW.Y, G_MAX_MM)
     G_CORR_RAW.Z = _ClampReal(G_CORR_RAW.Z, G_MAX_MM)
@@ -59,6 +59,15 @@ IF G_CORR_VALID THEN
     G_CORR_FILT.A = _Lpf(G_CORR_FILT.A, G_CORR_RAW.A, G_ALPHA)
     G_CORR_FILT.B = _Lpf(G_CORR_FILT.B, G_CORR_RAW.B, G_ALPHA)
     G_CORR_FILT.C = _Lpf(G_CORR_FILT.C, G_CORR_RAW.C, G_ALPHA)
+    
+    ; Apply secondary safety clamps to filtered output (cumulative limit)
+    ; This ensures total correction never exceeds 2cm/10deg from original
+    G_CORR_FILT.X = _ClampReal(G_CORR_FILT.X, G_MAX_MM)
+    G_CORR_FILT.Y = _ClampReal(G_CORR_FILT.Y, G_MAX_MM)
+    G_CORR_FILT.Z = _ClampReal(G_CORR_FILT.Z, G_MAX_MM)
+    G_CORR_FILT.A = _ClampReal(G_CORR_FILT.A, G_MAX_DEG)
+    G_CORR_FILT.B = _ClampReal(G_CORR_FILT.B, G_MAX_DEG)
+    G_CORR_FILT.C = _ClampReal(G_CORR_FILT.C, G_MAX_DEG)
     
     ; Mark as processed
     G_CORR_VALID = FALSE
@@ -75,7 +84,9 @@ ELSE
     ; G_CORR_FILT.C = _Lpf(G_CORR_FILT.C, 0.0, G_DECAY)
 ENDIF
 
-; Apply filtered correction continuously: $BASE = delta : reference
-$BASE = G_CORR_FILT : BASE_REF
+; Apply filtered correction when enabled: $BASE = delta : reference
+IF G_CORR_ENABLE THEN
+    $BASE = G_CORR_FILT : BASE_REF
+ENDIF
 
 ; End of cyclic vision correction code

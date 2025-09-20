@@ -7,13 +7,15 @@ This project implements a real-time vision correction system for KUKA industrial
 The system consists of two main components:
 
 1. **Raspberry Pi Vision System** - Mounted on robot tool, tracks ArUco markers
-2. **KUKA Controller Integration** - Receives corrections via TCP and adjusts robot coordinate system
+2. **Correction Helper + KUKA Controller**
+   - Preferred: helper runs on the Raspberry Pi and connects to KUKAVARPROXY on the controller
+   - Alternative: helper runs on the controller Windows PC
 
 ```
 ┌─────────────────┐    TCP/Ethernet    ┌─────────────────┐
 │   Raspberry Pi  │◄──────────────────►│ KUKA Controller │
-│   + Camera      │                    │   Windows PC    │
-│   (Tool Frame)  │                    │   + KRL System  │
+│   + Camera      │        7000        │   Windows PC    │
+│ + Helper (TCP)  │  (KUKAVARPROXY)    │   + KRL System  │
 └─────────────────┘                    └─────────────────┘
         │                                       │
         ▼                                       ▼
@@ -50,7 +52,7 @@ The system consists of two main components:
     ├── sps_additions.src             # SPS continuous correction
     ├── VisionRun.src                 # Sample program
     ├── VisionRun.dat                 # Sample points
-    ├── correction_helper.py          # Windows TCP helper
+   ├── (helper runs on Pi now; see raspberry-pi/src/correction_helper.py)
     └── README.md                     # Controller setup guide
 ```
 
@@ -61,6 +63,7 @@ The system consists of two main components:
 1. **Mount camera** on robot tool (recommend USB3 camera for low latency)
 2. **Place ArUco markers** in robot workspace at known positions
 3. **Connect Raspberry Pi** to network with access to KUKA controller Windows PC
+4. Ensure the controller runs KUKAVARPROXY on port 7000
 
 ### 2. Raspberry Pi Setup
 
@@ -80,7 +83,10 @@ nano src/vision_correction_system.py  # Set controller IP, camera params, marker
 # Test camera and detection
 python3 src/aruco_detector.py
 
-# Run vision correction system
+# Start helper (recommended on Pi)
+python3 src/correction_helper.py --kuka-ip <KUKA_PC_IP>
+
+# In another session, run vision correction system
 python3 src/vision_correction_system.py
 ```
 
@@ -90,7 +96,7 @@ python3 src/vision_correction_system.py
 2. **Add KRL variables** from `kuka-controller/config_additions.dat` to `$CONFIG.DAT`
 3. **Modify SPS.SUB** with code from `kuka-controller/sps_additions.src`
 4. **Install sample program** files to test integration
-5. **Run Windows helper**: `python correction_helper.py`
+5. If not running the helper on Pi, you can run it on Windows instead: `python correction_helper.py`
 
 See detailed setup instructions in `kuka-controller/README.md`
 

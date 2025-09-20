@@ -1,12 +1,12 @@
 # KUKA Controller Integration
 
-This directory contains the KRL code and Windows helper application for integrating vision corrections with KUKA controllers, specifically targeting VKRC2 systems.
+This directory contains the KRL code and integration notes for vision corrections with KUKA controllers, specifically targeting VKRC2 systems. The TCP helper can run on the Raspberry Pi (recommended) or on the Windows controller PC.
 
 ## Architecture
 
 ```
 Raspberry Pi ----TCP----> Windows PC ----KUKAVARPROXY----> KRL Variables
-                          (correction_helper.py)              (SPS.SUB)
+ (correction_helper.py)                    (port 7000)         (SPS.SUB)
                                                                    |
                                                               $BASE update
 ```
@@ -20,9 +20,9 @@ Raspberry Pi ----TCP----> Windows PC ----KUKAVARPROXY----> KRL Variables
 - **`VisionRun.src`** - Sample main program with vision correction
 - **`VisionRun.dat`** - Point data for the sample program
 
-### Windows Helper
+### Helper
 
-- **`correction_helper.py`** - TCP server that receives corrections and writes KRL variables
+- **`raspberry-pi/src/correction_helper.py`** - TCP server that receives corrections and writes KRL variables. Preferred deployment is on the Raspberry Pi.
 
 ## Setup Instructions
 
@@ -47,18 +47,20 @@ Raspberry Pi ----TCP----> Windows PC ----KUKAVARPROXY----> KRL Variables
    - Copy `VisionRun.dat` to `R1/Program/`
    - Modify points in `VisionRun.dat` for your workspace
 
-### 2. Windows Helper Setup
+### 2. Helper Setup
 
-1. **Install Python** (3.7+) on the KRC2 Windows PC
+Option A (recommended) — run on Raspberry Pi:
 
-2. **Install KUKAVARPROXY** (if not already installed)
-   - Download from KUKA or use existing installation
-   - Ensure it's running on port 7000 (default)
+1. Ensure KUKAVARPROXY is installed and running on the controller PC (port 7000)
+2. On the Pi, run:
+   - `python3 raspberry-pi/src/correction_helper.py --port 7001 --kuka-ip <KUKA_PC_IP>`
 
-3. **Run the correction helper**:
-   ```bash
-   python correction_helper.py --port 7001 --kuka-ip 127.0.0.1
-   ```
+Option B — run on Windows controller PC:
+
+1. Install Python (3.7+)
+2. Ensure KUKAVARPROXY is running on port 7000
+3. Copy `raspberry-pi/src/correction_helper.py` and run:
+   - `python correction_helper.py --port 7001 --kuka-ip 127.0.0.1`
 
 ### 3. Network Configuration
 

@@ -35,4 +35,6 @@ def test_kuka_abc_roundtrip_random(seed: int = 123):
         abc = rng.uniform(low=-179, high=179, size=3)
         R = kuka_abc_to_rotation_matrix(abc)
         abc_back = rotation_matrix_to_kuka_abc(R)
-        assert np.allclose(abc_back, abc, atol=1e-6)
+        # Compare the implied rotation matrices to avoid angle wrapping issues
+        R_back = kuka_abc_to_rotation_matrix(abc_back)
+        assert np.allclose(R_back, R, atol=1e-8)

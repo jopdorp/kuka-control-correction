@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import socket
 from queue import Queue, Empty
+import collections
 
 from aruco_detector import ArucoDetector, CameraPose
 from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
@@ -48,6 +49,9 @@ class SystemConfig:
     # Timing settings
     processing_rate: float = 30.0  # Hz
     communication_timeout: float = 1.0  # seconds
+    # Buffering and sync
+    buffer_size: int = 200  # number of samples to keep in deques
+    max_time_skew: float = 0.5  # seconds, allowable difference between frame and controller state
 
 
 @dataclass
@@ -94,11 +98,13 @@ class VisionCorrectionSystem:
         self.message_queue = Queue()
         self.latest_controller_state = None
         self.controller_state_lock = threading.Lock()
+        self.controller_state_buffer = collections.deque(maxlen=self.config.buffer_size)
 
         # Processing
         self.processing_running = False
         self.current_frame = None
         self.frame_lock = threading.Lock()
+        self.camera_pose_buffer = collections.deque(maxlen=self.config.buffer_size)
 
         # State tracking
         self.sequence_counter = 0
@@ -308,6 +314,7 @@ class VisionCorrectionSystem:
                                 if msg.get('type') == 'CONTROLLER_STATE':
                                     with self.controller_state_lock:
                                         self.latest_controller_state = msg
+                                        self.controller_state_buffer.append(msg)
                             except Exception:
                                 # ignore partial/garbage
                                 pass
@@ -443,6 +450,11 @@ class VisionCorrectionSystem:
         if not detected_markers:
             self.logger.debug("No markers detected")
             return None
+
+        # Optionally store camera pose estimate for diagnostics
+        cam_pose = self.aruco_detector.estimate_camera_pose(detected_markers)
+        if cam_pose:
+            self.camera_pose_buffer.append({'timestamp': frame_ts, 'pose': cam_pose})
         
         # Calculate correction from detected markers (continuous mode)
         correction = self._calculate_base_correction(detected_markers, frame_ts)
@@ -493,9 +505,11 @@ class VisionCorrectionSystem:
         if not actual_camera_pose or actual_camera_pose.confidence < self.config.confidence_threshold:
             return None
 
-        # Get latest controller state
-        with self.controller_state_lock:
-            state = dict(self.latest_controller_state) if self.latest_controller_state else None
+        # Get nearest-in-time controller state
+        state = self._get_controller_state_for_timestamp(frame_ts) if frame_ts is not None else None
+        if state is None:
+            with self.controller_state_lock:
+                state = dict(self.latest_controller_state) if self.latest_controller_state else None
 
         if not state:
             self.logger.debug("No controller state yet; skipping correction")
@@ -504,7 +518,7 @@ class VisionCorrectionSystem:
         # Basic timestamp sync: ensure state is recent relative to the frame
         if frame_ts is not None:
             st = float(state.get('timestamp', 0.0))
-            if abs(frame_ts - st) > 0.15:  # >150ms stale
+            if abs(frame_ts - st) > self.config.max_time_skew:
                 self.logger.debug("Controller state stale vs frame; skipping")
                 return None
 
@@ -528,6 +542,26 @@ class VisionCorrectionSystem:
         )
 
         return self._calculate_correction(expected_camera_pose, actual_camera_pose)
+
+    def _get_controller_state_for_timestamp(self, ts: float) -> Optional[Dict[str, Any]]:
+        """Return the controller state closest in time to ts within max_time_skew."""
+        with self.controller_state_lock:
+            if not self.controller_state_buffer:
+                return None
+            # Find nearest by absolute delta
+            best = None
+            best_dt = None
+            for item in self.controller_state_buffer:
+                st = item.get('timestamp')
+                if st is None:
+                    continue
+                dt = abs(ts - float(st))
+                if best_dt is None or dt < best_dt:
+                    best_dt = dt
+                    best = item
+            if best is not None and best_dt is not None and best_dt <= self.config.max_time_skew:
+                return dict(best)
+            return None
     
     def _calculate_correction(
         self,

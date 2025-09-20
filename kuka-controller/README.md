@@ -1,6 +1,6 @@
 # KUKA Controller Integration
 
-This directory contains the KRL code and integration notes for vision corrections with KUKA controllers, specifically targeting VKRC2 systems. The TCP helper can run on the Raspberry Pi (recommended) or on the Windows controller PC.
+This directory contains the KRL code and integration notes for vision corrections with KUKA controllers, specifically targeting VKRC2 systems. The TCP helper runs on the Raspberry Pi and connects to KUKAVARPROXY on the controller PC.
 
 ## Architecture
 
@@ -47,20 +47,11 @@ Raspberry Pi ----TCP----> Windows PC ----KUKAVARPROXY----> KRL Variables
    - Copy `VisionRun.dat` to `R1/Program/`
    - Modify points in `VisionRun.dat` for your workspace
 
-### 2. Helper Setup
-
-Option A (recommended) — run on Raspberry Pi:
+### 2. Helper Setup (Pi)
 
 1. Ensure KUKAVARPROXY is installed and running on the controller PC (port 7000)
 2. On the Pi, run:
    - `python3 raspberry-pi/src/correction_helper.py --port 7001 --kuka-ip <KUKA_PC_IP>`
-
-Option B — run on Windows controller PC:
-
-1. Install Python (3.7+)
-2. Ensure KUKAVARPROXY is running on port 7000
-3. Copy `raspberry-pi/src/correction_helper.py` and run:
-   - `python correction_helper.py --port 7001 --kuka-ip 127.0.0.1`
 
 ### 3. Network Configuration
 
@@ -79,8 +70,8 @@ Option B — run on Windows controller PC:
 ### Startup Sequence
 
 1. **Start KUKAVARPROXY** on Windows PC
-2. **Start correction helper**: `python correction_helper.py`
-3. **Start vision system** on Raspberry Pi
+2. **Start correction helper** on the Raspberry Pi
+3. **Start vision system** on the Raspberry Pi
 4. **Load and run** `VisionRun` on KUKA controller
 
 ### Runtime Behavior
@@ -121,8 +112,7 @@ Option B — run on Windows controller PC:
 ### Vision System Not Connecting
 
 1. Check network connectivity: `ping 192.168.1.50`
-2. Verify Windows firewall allows port 7001
-3. Ensure correction helper is running
+2. Ensure correction helper is running on the Pi and can reach the controller (port 7000)
 
 ### KUKAVARPROXY Issues
 

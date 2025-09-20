@@ -1,15 +1,11 @@
 """
-KUKA Vision Correction Helper
+KUKA Vision Correction Helper (Pi-only)
 
-TCP server that receives vision corrections (JSON lines) and writes KRL global
-variables via KUKAVARPROXY running on the KUKA controller.
-
-Deployment options:
-- Preferred: Run on the Raspberry Pi (connects to KUKAVARPROXY on controller IP)
-- Alternative: Run on Windows on the controller PC (install Python there)
+Runs on the Raspberry Pi. Receives vision corrections (JSON lines) and writes
+KRL global variables via KUKAVARPROXY running on the KUKA controller PC.
 
 Usage:
-    python correction_helper.py [--port 7001] [--kuka-ip 192.168.1.50]
+    python correction_helper.py --port 7001 --kuka-ip <KUKA_PC_IP>
 """
 
 import socket

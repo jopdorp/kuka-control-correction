@@ -8,14 +8,13 @@ The system consists of two main components:
 
 1. **Raspberry Pi Vision System** - Mounted on robot tool, tracks ArUco markers
 2. **Correction Helper + KUKA Controller**
-   - Preferred: helper runs on the Raspberry Pi and connects to KUKAVARPROXY on the controller
-   - Alternative: helper runs on the controller Windows PC
+   - Helper runs on the Raspberry Pi and connects to KUKAVARPROXY on the controller
 
 ```
 ┌─────────────────┐    TCP/Ethernet    ┌─────────────────┐
 │   Raspberry Pi  │◄──────────────────►│ KUKA Controller │
 │   + Camera      │        7000        │   Windows PC    │
-│ + Helper (TCP)  │  (KUKAVARPROXY)    │   + KRL System  │
+│ + Helper (TCP)  │  → KUKAVARPROXY    │   + KRL System  │
 └─────────────────┘                    └─────────────────┘
         │                                       │
         ▼                                       ▼
@@ -62,7 +61,7 @@ The system consists of two main components:
 
 1. **Mount camera** on robot tool (recommend USB3 camera for low latency)
 2. **Place ArUco markers** in robot workspace at known positions
-3. **Connect Raspberry Pi** to network with access to KUKA controller Windows PC
+3. **Connect Raspberry Pi** to network with access to the KUKA controller PC
 4. Ensure the controller runs KUKAVARPROXY on port 7000
 
 ### 2. Raspberry Pi Setup
@@ -96,7 +95,7 @@ python3 src/vision_correction_system.py
 2. **Add KRL variables** from `kuka-controller/config_additions.dat` to `$CONFIG.DAT`
 3. **Modify SPS.SUB** with code from `kuka-controller/sps_additions.src`
 4. **Install sample program** files to test integration
-5. If not running the helper on Pi, you can run it on Windows instead: `python correction_helper.py`
+5. The helper runs on the Pi and connects to the controller’s KUKAVARPROXY
 
 See detailed setup instructions in `kuka-controller/README.md`
 
@@ -145,7 +144,7 @@ marker_positions = {
 
 ### KUKA Integration
 
-1. **Windows helper** receives TCP corrections and writes to KUKAVARPROXY  
+1. **Helper (on Pi)** receives TCP corrections from the vision process and writes to KUKAVARPROXY  
 2. **SPS background task** applies low-pass filtering at ~12ms rate
 3. **Base coordinate adjustment** modifies `$BASE` for automatic correction
 4. **Reference frame capture** allows per-program coordinate system setup
@@ -204,8 +203,9 @@ $BASE_new = $BASE_old + Filtered(Correction)
 
 4. **Network connection failures**:
    - Verify IP addresses and port configurations
-   - Check firewall settings on Windows PC
-   - Test network connectivity with ping
+   - Ensure Windows firewall on the controller allows inbound KUKAVARPROXY (port 7000) from the Pi
+   - Ensure the Pi allows inbound helper port (7001) if the vision app runs off-box
+   - Test connectivity with ping and a TCP test (e.g., `nc -vz <controller_ip> 7000`)
 
 ## Performance Optimization
 

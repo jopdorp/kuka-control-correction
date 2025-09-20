@@ -36,7 +36,7 @@ class SystemConfig:
     robot_model: str = "KR6_R900"
     
     # Communication settings
-    controller_ip: str = "192.168.1.50"   # Helper TCP server IP (typically the Pi if helper runs there)
+    controller_ip: str = "127.0.0.1"     # Helper TCP server IP (helper runs locally on the Pi)
     controller_port: int = 7001           # Helper TCP port for corrections
     
     # Correction settings

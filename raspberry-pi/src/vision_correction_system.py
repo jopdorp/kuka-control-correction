@@ -74,30 +74,32 @@ class VisionCorrectionSystem:
         """
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize components
         self.aruco_detector = ArucoDetector(
             dictionary_type=config.aruco_dictionary,
-            marker_size=config.marker_size
+            marker_size=config.marker_size,
         )
-        
+
         # TOOL->CAM transform (to be configured)
         self.T_tool_cam = np.eye(4)
-        
+
         # Camera setup
         self.camera = None
         self.camera_running = False
-        
+
         # Communication
-        self.tcp_socket = None            # TCP client to controller helper
+        self.tcp_socket = None  # TCP client to controller helper
         self.communication_running = False
         self.message_queue = Queue()
-        
+        self.latest_controller_state = None
+        self.controller_state_lock = threading.Lock()
+
         # Processing
         self.processing_running = False
         self.current_frame = None
         self.frame_lock = threading.Lock()
-        
+
         # State tracking
         self.sequence_counter = 0
         self.last_correction_time = 0
@@ -105,9 +107,9 @@ class VisionCorrectionSystem:
             'frames_processed': 0,
             'markers_detected': 0,
             'corrections_sent': 0,
-            'communication_errors': 0
+            'communication_errors': 0,
         }
-        
+
         self.logger.info("Vision correction system initialized")
     
     def load_configuration_files(self, 
@@ -278,7 +280,7 @@ class VisionCorrectionSystem:
             self.tcp_socket = None
     
     def _communication_loop(self):
-        """Communication loop: send corrections via TCP to KUKA controller."""
+        """Communication loop: send corrections and receive controller state."""
         while self.communication_running:
             try:
                 # Send queued messages
@@ -291,6 +293,29 @@ class VisionCorrectionSystem:
             except Exception as e:
                 self.logger.error(f"Failed to send message: {e}")
                 self.system_statistics['communication_errors'] += 1
+            # Non-blocking receive for controller state
+            try:
+                if self.tcp_socket:
+                    self.tcp_socket.settimeout(0.0)
+                    data = self.tcp_socket.recv(8192)
+                    if data:
+                        for line in data.decode('utf-8', errors='ignore').split('\n'):
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                msg = json.loads(line)
+                                if msg.get('type') == 'CONTROLLER_STATE':
+                                    with self.controller_state_lock:
+                                        self.latest_controller_state = msg
+                            except Exception:
+                                # ignore partial/garbage
+                                pass
+            except BlockingIOError:
+                pass
+            except Exception:
+                # Ignore receive errors, sending continues
+                pass
             
             time.sleep(0.01)  # Small sleep to prevent CPU spinning
 
@@ -409,6 +434,7 @@ class VisionCorrectionSystem:
             if self.current_frame is None:
                 return None
             frame = self.current_frame.copy()
+            frame_ts = time.time()
         
         # Detect ArUco markers
         detected_markers = self.aruco_detector.detect_markers(frame)
@@ -417,9 +443,9 @@ class VisionCorrectionSystem:
         if not detected_markers:
             self.logger.debug("No markers detected")
             return None
-            
+        
         # Calculate correction from detected markers (continuous mode)
-        correction = self._calculate_base_correction(detected_markers)
+        correction = self._calculate_base_correction(detected_markers, frame_ts)
         return correction
     
     def _process_frame_with_command(self, move_command: MoveCommand) -> Optional[CorrectionData]:
@@ -455,6 +481,52 @@ class VisionCorrectionSystem:
         )
         
         # Calculate correction
+        return self._calculate_correction(expected_camera_pose, actual_camera_pose)
+
+    def _calculate_base_correction(self, detected_markers: Any, frame_ts: Optional[float] = None) -> Optional[CorrectionData]:
+        """Calculate BASE correction using latest controller state (TCP + BASE).
+
+        Uses latest CONTROLLER_STATE from helper. Optionally checks staleness vs frame_ts.
+        """
+        # Estimate actual camera pose from markers
+        actual_camera_pose = self.aruco_detector.estimate_camera_pose(detected_markers)
+        if not actual_camera_pose or actual_camera_pose.confidence < self.config.confidence_threshold:
+            return None
+
+        # Get latest controller state
+        with self.controller_state_lock:
+            state = dict(self.latest_controller_state) if self.latest_controller_state else None
+
+        if not state:
+            self.logger.debug("No controller state yet; skipping correction")
+            return None
+
+        # Basic timestamp sync: ensure state is recent relative to the frame
+        if frame_ts is not None:
+            st = float(state.get('timestamp', 0.0))
+            if abs(frame_ts - st) > 0.15:  # >150ms stale
+                self.logger.debug("Controller state stale vs frame; skipping")
+                return None
+
+        tcp = state.get('tcp') or {}
+        base = state.get('base') or {}
+
+        try:
+            t_mm = np.array([float(tcp.get('X', 0.0)), float(tcp.get('Y', 0.0)), float(tcp.get('Z', 0.0))])
+            r_deg = np.array([float(tcp.get('A', 0.0)), float(tcp.get('B', 0.0)), float(tcp.get('C', 0.0))])
+        except Exception:
+            return None
+
+        # Expected camera pose from controller TCP + known tool->cam
+        T_base_tcp = pose_to_T(t_mm, r_deg)
+        T_base_cam_expected = T_base_tcp @ self.T_tool_cam
+        expected_camera_pose = RobotPose(
+            translation=T_base_cam_expected[:3, 3],
+            rotation=rotation_matrix_to_kuka_abc(T_base_cam_expected[:3, :3]),
+            rotation_matrix=T_base_cam_expected[:3, :3],
+            frame="BASE",
+        )
+
         return self._calculate_correction(expected_camera_pose, actual_camera_pose)
     
     def _calculate_correction(

@@ -21,3 +21,7 @@ GLOBAL REAL  G_DECAY = 0.02                             ; Slow decay rate when n
 ; Debug/status
 GLOBAL INT   G_CORR_COUNT = 0                           ; Count of applied corrections
 GLOBAL REAL  G_LAST_UPDATE = 0.0                        ; Timestamp of last correction
+
+; Controller state mirror (for Pi to read via KVP)
+GLOBAL FRAME G_BASE_ACTIVE = {X 0,Y 0,Z 0,A 0,B 0,C 0} ; Mirror of current $BASE
+GLOBAL E6POS G_TCP_ACT = {X 0,Y 0,Z 0,A 0,B 0,C 0,S 0,T 0,E1 0,E2 0,E3 0,E4 0,E5 0,E6 0} ; Mirror of $POS_ACT

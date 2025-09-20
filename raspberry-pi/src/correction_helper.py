@@ -14,8 +14,9 @@ import logging
 import time
 import threading
 import argparse
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import struct
+import re
 
 
 class KukaVarProxy:
@@ -94,6 +95,53 @@ class KukaVarProxy:
             self.disconnect()
             return False
 
+    def read_variable(self, var_name: str) -> Optional[str]:
+        """Read a variable via KUKAVARPROXY protocol and return raw ASCII value string.
+
+        Note: Variable must be GLOBAL in $CONFIG.DAT for reliable access.
+        """
+        if not self.socket:
+            if not self.connect():
+                return None
+
+        try:
+            # Reading: send length + var name only
+            msg_bytes = var_name.encode('ascii')
+            length_bytes = struct.pack('<H', len(msg_bytes))
+            self.socket.sendall(length_bytes + msg_bytes)
+
+            # Response: 2-byte length + ASCII payload
+            resp_len_bytes = self.socket.recv(2)
+            if len(resp_len_bytes) != 2:
+                raise Exception("Failed to read response length")
+
+            resp_len = struct.unpack('<H', resp_len_bytes)[0]
+            if resp_len == 0:
+                return ""
+            response = self.socket.recv(resp_len).decode('ascii', errors='ignore')
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Failed to read {var_name}: {e}")
+            self.disconnect()
+            return None
+
+    def read_frame_parsed(self, var_name: str) -> Optional[Dict[str, float]]:
+        """Read a FRAME/E6POS-like string and parse X,Y,Z,A,B,C."""
+        raw = self.read_variable(var_name)
+        if raw is None:
+            return None
+        # Expect format like: {X 0.000,Y 0.000,Z 0.000,A 0.000,B 0.000,C 0.000,...}
+        vals: Dict[str, float] = {}
+        for key in ("X", "Y", "Z", "A", "B", "C"):
+            m = re.search(rf"{key}\s+([-+]?\d+(?:\.\d+)?)", raw)
+            if m:
+                vals[key] = float(m.group(1))
+        # Only return if we got at least X..C
+        if all(k in vals for k in ("X","Y","Z","A","B","C")):
+            return vals
+        return None
+
 
 class VisionCorrectionHelper:
     """TCP server for vision corrections."""
@@ -160,9 +208,18 @@ class VisionCorrectionHelper:
     def handle_client(self, client_socket: socket.socket, client_addr):
         """Handle connected client (vision system)."""
         buffer = ""
+        stop_event = threading.Event()
 
         try:
             client_socket.settimeout(5.0)
+
+            # Start background streamer of controller state
+            streamer = threading.Thread(
+                target=self._stream_controller_state,
+                args=(client_socket, stop_event),
+                daemon=True,
+            )
+            streamer.start()
 
             while self.running:
                 try:
@@ -190,7 +247,28 @@ class VisionCorrectionHelper:
                 client_socket.close()
             except Exception:
                 pass
+            stop_event.set()
             self.logger.info(f"Client {client_addr} disconnected")
+
+    def _stream_controller_state(self, client_socket: socket.socket, stop_event: threading.Event):
+        """Periodically read controller state via KVP and send to the client as JSON lines."""
+        while self.running and not stop_event.is_set():
+            try:
+                base = self.kuka_proxy.read_frame_parsed("G_BASE_ACTIVE")
+                tcp = self.kuka_proxy.read_frame_parsed("G_TCP_ACT")
+                if base and tcp:
+                    payload = {
+                        "type": "CONTROLLER_STATE",
+                        "timestamp": time.time(),  # Pi time when sampled
+                        "base": base,
+                        "tcp": tcp,
+                    }
+                    line = (json.dumps(payload) + "\n").encode('utf-8')
+                    client_socket.sendall(line)
+            except Exception as e:
+                # Non-fatal; keep trying
+                self.logger.debug(f"State stream error: {e}")
+            time.sleep(0.05)  # ~20 Hz
 
     def process_correction_message(self, json_line: str):
         """Process a vision correction message and update KRL variables."""

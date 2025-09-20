@@ -89,4 +89,8 @@ IF G_CORR_ENABLE THEN
     $BASE = G_CORR_FILT : BASE_REF
 ENDIF
 
+; Mirror controller state for external reader (Pi via KVP)
+G_TCP_ACT = $POS_ACT
+G_BASE_ACTIVE = $BASE
+
 ; End of cyclic vision correction code

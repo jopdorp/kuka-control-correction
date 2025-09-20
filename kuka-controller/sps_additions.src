@@ -1,0 +1,81 @@
+;
+; SPS.SUB additions for continuous vision correction
+; Add these functions and cyclic code to your SPS.SUB
+;
+
+; Helper functions (add to SPS.SUB or separate .SRC included by SPS)
+DEF _ClampReal(val:REAL, limit:REAL):REAL
+    IF val > limit THEN
+        RETURN limit
+    ELSE
+        IF val < -limit THEN
+            RETURN -limit
+        ELSE
+            RETURN val
+        ENDIF
+    ENDIF
+END
+
+DEF _WrapDeg(a:REAL):REAL
+    DECL REAL r
+    r = a
+    WHILE r >= 180.0 DO
+        r = r - 360.0
+    ENDWHILE
+    WHILE r < -180.0 DO
+        r = r + 360.0
+    ENDWHILE
+    RETURN r
+END
+
+DEF _Lpf(prev:REAL, meas:REAL, alpha:REAL):REAL
+    ; Low-pass filter: output = prev + alpha * (input - prev)
+    RETURN prev + alpha * (meas - prev)
+END
+
+; ========================================================================
+; Cyclic code to add inside the main SPS loop (after system checks)
+; ========================================================================
+
+; Vision correction processing (runs every SPS cycle ~12ms)
+IF G_CORR_VALID THEN
+    ; Wrap angles to [-180, 180)
+    G_CORR_RAW.A = _WrapDeg(G_CORR_RAW.A)
+    G_CORR_RAW.B = _WrapDeg(G_CORR_RAW.B)
+    G_CORR_RAW.C = _WrapDeg(G_CORR_RAW.C)
+    
+    ; Safety clamps
+    G_CORR_RAW.X = _ClampReal(G_CORR_RAW.X, G_MAX_MM)
+    G_CORR_RAW.Y = _ClampReal(G_CORR_RAW.Y, G_MAX_MM)
+    G_CORR_RAW.Z = _ClampReal(G_CORR_RAW.Z, G_MAX_MM)
+    G_CORR_RAW.A = _ClampReal(G_CORR_RAW.A, G_MAX_DEG)
+    G_CORR_RAW.B = _ClampReal(G_CORR_RAW.B, G_MAX_DEG)
+    G_CORR_RAW.C = _ClampReal(G_CORR_RAW.C, G_MAX_DEG)
+    
+    ; Low-pass filter each component
+    G_CORR_FILT.X = _Lpf(G_CORR_FILT.X, G_CORR_RAW.X, G_ALPHA)
+    G_CORR_FILT.Y = _Lpf(G_CORR_FILT.Y, G_CORR_RAW.Y, G_ALPHA)
+    G_CORR_FILT.Z = _Lpf(G_CORR_FILT.Z, G_CORR_RAW.Z, G_ALPHA)
+    G_CORR_FILT.A = _Lpf(G_CORR_FILT.A, G_CORR_RAW.A, G_ALPHA)
+    G_CORR_FILT.B = _Lpf(G_CORR_FILT.B, G_CORR_RAW.B, G_ALPHA)
+    G_CORR_FILT.C = _Lpf(G_CORR_FILT.C, G_CORR_RAW.C, G_ALPHA)
+    
+    ; Mark as processed
+    G_CORR_VALID = FALSE
+    G_CORR_COUNT = G_CORR_COUNT + 1
+    G_LAST_UPDATE = $TIMER[1]  ; or use system timer
+ELSE
+    ; Optional: slowly decay correction to zero if no updates
+    ; Uncomment if you want filtering to settle back to zero
+    ; G_CORR_FILT.X = _Lpf(G_CORR_FILT.X, 0.0, G_DECAY)
+    ; G_CORR_FILT.Y = _Lpf(G_CORR_FILT.Y, 0.0, G_DECAY)
+    ; G_CORR_FILT.Z = _Lpf(G_CORR_FILT.Z, 0.0, G_DECAY)
+    ; G_CORR_FILT.A = _Lpf(G_CORR_FILT.A, 0.0, G_DECAY)
+    ; G_CORR_FILT.B = _Lpf(G_CORR_FILT.B, 0.0, G_DECAY)
+    ; G_CORR_FILT.C = _Lpf(G_CORR_FILT.C, 0.0, G_DECAY)
+ENDIF
+
+; Apply filtered correction continuously: $BASE = delta : reference
+$BASE = G_CORR_FILT : BASE_REF
+
+; End of cyclic vision correction code

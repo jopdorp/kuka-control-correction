@@ -1,0 +1,21 @@
+&ACCESS RVP
+&REL 2
+&COMMENT Point data for vision correction demo
+
+; Example points - replace with your actual positions
+DECL E6POS P_APPROACH[5]
+DECL E6POS P_WORK[5]
+
+; Approach points (safe positions above work points)
+P_APPROACH[1] = {X 100, Y 200, Z 300, A 0, B 90, C 0, S 2, T 35}
+P_APPROACH[2] = {X 200, Y 200, Z 300, A 0, B 90, C 0, S 2, T 35}
+P_APPROACH[3] = {X 300, Y 200, Z 300, A 0, B 90, C 0, S 2, T 35}
+P_APPROACH[4] = {X 200, Y 300, Z 300, A 0, B 90, C 0, S 2, T 35}
+P_APPROACH[5] = {X 200, Y 100, Z 300, A 0, B 90, C 0, S 2, T 35}
+
+; Work points (lower Z for actual work)
+P_WORK[1] = {X 100, Y 200, Z 150, A 0, B 90, C 0, S 2, T 35}
+P_WORK[2] = {X 200, Y 200, Z 150, A 0, B 90, C 0, S 2, T 35}
+P_WORK[3] = {X 300, Y 200, Z 150, A 0, B 90, C 0, S 2, T 35}
+P_WORK[4] = {X 200, Y 300, Z 150, A 0, B 90, C 0, S 2, T 35}
+P_WORK[5] = {X 200, Y 100, Z 150, A 0, B 90, C 0, S 2, T 35}

@@ -1,0 +1,22 @@
+;
+; CONFIG.DAT additions for continuous vision correction
+; Add these lines to R1/$CONFIG.DAT
+;
+
+; Vision correction globals for continuous BASE adjustment
+GLOBAL FRAME BASE_REF = {X 0,Y 0,Z 0,A 0,B 0,C 0}      ; Reference base (captured once)
+GLOBAL FRAME G_CORR_RAW = {X 0,Y 0,Z 0,A 0,B 0,C 0}    ; Raw correction from vision (mm/deg)
+GLOBAL FRAME G_CORR_FILT = {X 0,Y 0,Z 0,A 0,B 0,C 0}   ; Low-pass filtered correction
+GLOBAL BOOL  G_CORR_VALID = FALSE                        ; TRUE when new raw correction arrives
+GLOBAL REAL  G_ALPHA = 0.2                              ; Filter coefficient 0..1 (0.2 = ~few Hz at 12ms)
+
+; Safety limits
+GLOBAL REAL  G_MAX_MM = 5.0                             ; Max translation correction (mm)
+GLOBAL REAL  G_MAX_DEG = 0.5                            ; Max rotation correction (degrees)
+
+; Optional: decay to zero if no updates
+GLOBAL REAL  G_DECAY = 0.02                             ; Slow decay rate when no updates
+
+; Debug/status
+GLOBAL INT   G_CORR_COUNT = 0                           ; Count of applied corrections
+GLOBAL REAL  G_LAST_UPDATE = 0.0                        ; Timestamp of last correction

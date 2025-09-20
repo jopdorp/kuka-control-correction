@@ -1,0 +1,47 @@
+&ACCESS RVP
+&REL 2
+&COMMENT Sample program with continuous vision correction
+DEF VisionRun()
+
+; Vision-corrected motion program
+; This program captures the reference base and runs motions while
+; SPS continuously applies vision corrections in the background
+
+DECL INT I
+
+; Initialize motion system
+$ADVANCE = 1    ; Allowed since $BASE is recomputed every SPS cycle
+BAS(#INITMOV, 0)
+
+; Capture reference base frame (do this once at start)
+BASE_REF = $BASE
+
+; Zero the filtered correction
+G_CORR_FILT = {X 0,Y 0,Z 0,A 0,B 0,C 0}
+
+; Reset counters
+G_CORR_COUNT = 0
+
+; Move to home position
+PTP HOME VEL=50
+
+; Example motion sequence with continuous correction
+FOR I = 1 TO 5
+    ; Linear moves - vision correction applied automatically by SPS
+    LIN P_APPROACH[I] C_DIS VEL=100
+    LIN P_WORK[I] C_DIS VEL=50
+    
+    ; Optional: brief pause for vision system to settle
+    WAIT SEC 0.1
+    
+    ; Return motion
+    LIN P_APPROACH[I] C_DIS VEL=100
+ENDFOR
+
+; Return home
+PTP HOME VEL=50
+
+; Optional: disable correction by zeroing
+; G_CORR_FILT = {X 0,Y 0,Z 0,A 0,B 0,C 0}
+
+END

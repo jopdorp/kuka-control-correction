@@ -455,6 +455,11 @@ class VisionCorrectionSystem:
         cam_pose = self.aruco_detector.estimate_camera_pose(detected_markers)
         if cam_pose:
             self.camera_pose_buffer.append({'timestamp': frame_ts, 'pose': cam_pose})
+            self.logger.info(f"Camera pose: pos=[{cam_pose.translation[0]:.3f}, {cam_pose.translation[1]:.3f}, {cam_pose.translation[2]:.3f}] conf={cam_pose.confidence:.2f} markers={cam_pose.num_markers_used}")
+        
+        # Log detected marker info
+        marker_ids = [m.marker_id for m in detected_markers]
+        self.logger.info(f"Detected {len(detected_markers)} markers: {marker_ids}")
         
         # Calculate correction from detected markers (continuous mode)
         correction = self._calculate_base_correction(detected_markers, frame_ts)

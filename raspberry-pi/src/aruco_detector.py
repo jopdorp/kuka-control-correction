@@ -165,11 +165,35 @@ class ArucoDetector:
         if ids is None:
             return []
         
-        # Estimate poses
+        # Estimate poses using solvePnP (compatible with newer OpenCV)
         marker_poses = []
-        rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
-            corners, self.marker_size, self.camera_matrix, self.distortion_coeffs
-        )
+        rvecs, tvecs = [], []
+        
+        if self.camera_matrix is not None and self.distortion_coeffs is not None:
+            for corner in corners:
+                # Create object points for single marker
+                half_size = self.marker_size / 2
+                obj_points = np.array([
+                    [-half_size, -half_size, 0],
+                    [ half_size, -half_size, 0],
+                    [ half_size,  half_size, 0],
+                    [-half_size,  half_size, 0]
+                ], dtype=np.float32)
+                
+                success, rvec, tvec = cv2.solvePnP(
+                    obj_points, corner[0], 
+                    self.camera_matrix, self.distortion_coeffs
+                )
+                if success:
+                    rvecs.append(rvec.flatten())
+                    tvecs.append(tvec.flatten())
+                else:
+                    rvecs.append(np.zeros(3))
+                    tvecs.append(np.zeros(3))
+        else:
+            # No calibration - create dummy poses
+            rvecs = [np.zeros(3) for _ in corners]
+            tvecs = [np.zeros(3) for _ in corners]
         
         for i, marker_id in enumerate(ids.flatten()):
             # Calculate confidence based on corner detection quality
@@ -177,12 +201,19 @@ class ArucoDetector:
             confidence = min(1.0, corner_area / 1000.0)  # Normalize area to confidence
             
             # Create rotation matrix
-            rotation_matrix = R.from_rotvec(rvecs[i][0]).as_matrix()
+            if i < len(rvecs):
+                rvec = rvecs[i]
+                tvec = tvecs[i]
+                rotation_matrix = R.from_rotvec(rvec).as_matrix()
+            else:
+                rvec = np.zeros(3)
+                tvec = np.zeros(3)
+                rotation_matrix = np.eye(3)
             
             marker_pose = MarkerPose(
                 marker_id=int(marker_id),
-                translation=tvecs[i][0],
-                rotation=rvecs[i][0],
+                translation=tvec,
+                rotation=rvec,
                 rotation_matrix=rotation_matrix,
                 corners=corners[i][0],
                 confidence=confidence
@@ -241,14 +272,14 @@ class ArucoDetector:
         )
         
         if not success or inliers is None:
-            self.logger.warning("PnP solve failed")
+            self.logger.debug("PnP solve failed")
             return None
         
         # Calculate confidence based on inlier ratio
         confidence = len(inliers) / len(object_points)
         
         if confidence < 0.5:  # Less than 50% inliers
-            self.logger.warning(f"Low confidence pose estimation: {confidence}")
+            self.logger.debug(f"Low confidence pose estimation: {confidence}")
             return None
         
         # Convert to camera pose (inverse transformation)

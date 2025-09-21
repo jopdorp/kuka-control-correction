@@ -61,6 +61,20 @@ class ArucoDetector:
         # ArUco detection setup
         self.dictionary = cv2.aruco.getPredefinedDictionary(dictionary_type)
         self.parameters = cv2.aruco.DetectorParameters()
+        # Tuned parameters for better precision and stability
+        try:
+            self.parameters.adaptiveThreshWinSizeMin = 5
+            self.parameters.adaptiveThreshWinSizeMax = 31
+            self.parameters.adaptiveThreshWinSizeStep = 6
+            self.parameters.minMarkerPerimeterRate = 0.02
+            self.parameters.maxMarkerPerimeterRate = 4.0
+            self.parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+            self.parameters.cornerRefinementWinSize = 5
+            self.parameters.minCornerDistanceRate = 0.02
+            self.parameters.minOtsuStdDev = 2.0
+        except Exception:
+            # Some OpenCV builds may not expose all attributes; ignore gracefully
+            pass
         self.detector = cv2.aruco.ArucoDetector(self.dictionary, self.parameters)
         
         # Marker and camera properties

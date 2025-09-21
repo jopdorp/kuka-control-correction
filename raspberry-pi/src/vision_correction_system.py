@@ -30,8 +30,8 @@ class SystemConfig:
     camera_fps: int = 30
     
     # ArUco settings
-    aruco_dictionary: int = cv2.aruco.DICT_6X6_250
-    marker_size: float = 0.05  # meters
+    aruco_dictionary: int = cv2.aruco.DICT_5X5_100
+    marker_size: float = 0.02  # meters (20 mm)
     
     # Robot settings
     robot_model: str = "KR6_R900"

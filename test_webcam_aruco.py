@@ -119,15 +119,18 @@ def main():
         print("Error: Could not open webcam")
         return
     
-
+    # Set MJPG format for better frame rates
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+    
     # Set resolution
-    # width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # Change this to desired width
-    # height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # Change this to desired height
     width = 1920
     height = 1080
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    print(f"Actual resolution: {width}x{height}")
+    
+    # Set frame rate
+    cap.set(cv2.CAP_PROP_FPS, 30)
     
     fx, fy = 800, 800  # Base focal lengths
     
@@ -206,7 +209,7 @@ def main():
             # Convert rotation vector to Euler angles (in degrees) for display
             rotation_matrix = last_cam_pose.rotation_matrix
             euler_angles = R.from_matrix(rotation_matrix).as_euler('xyz', degrees=True)
-            info_text.append(f"Cam rot: [{euler_angles[0]:.1f}°, {euler_angles[1]:.1f}°, {euler_angles[2]:.1f}°]")
+            info_text.append(f"Cam rot: [{euler_angles[0]:.1f}, {euler_angles[1]:.1f}, {euler_angles[2]:.1f}]")
             
             info_text.append(f"Confidence: {last_cam_pose.confidence:.2f}")
             info_text.append(f"Used {last_cam_pose.num_markers_used} markers")

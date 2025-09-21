@@ -26,16 +26,16 @@ class SystemConfig:
     """Configuration for the vision correction system."""
     # Camera settings
     camera_index: int = 0
-    camera_resolution: tuple = (640, 480)
+    camera_resolution: tuple = (1920, 1080)
     camera_fps: int = 30
     
     # ArUco settings
-    aruco_dictionary: int = cv2.aruco.DICT_5X5_100
+    aruco_dictionary: int = cv2.aruco.DICT_6X6_250
     marker_size: float = 0.02  # meters (20 mm)
     
     # Robot settings
-    robot_model: str = "KR6_R900"
-    
+    robot_model: str = "KR250_R2700-2"
+
     # Communication settings
     controller_ip: str = "127.0.0.1"     # Helper TCP server IP (helper runs locally on the Pi)
     controller_port: int = 7001           # Helper TCP port for corrections
@@ -211,10 +211,23 @@ class VisionCorrectionSystem:
                 self.logger.error("Failed to open camera")
                 return False
             
+            # Set MJPG format for better frame rates
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            self.camera.set(cv2.CAP_PROP_FOURCC, fourcc)
+            
             # Set camera properties
             self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera_resolution[0])
             self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera_resolution[1])
             self.camera.set(cv2.CAP_PROP_FPS, self.config.camera_fps)
+            
+            # Log actual camera settings
+            actual_width = self.camera.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_height = self.camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
+            actual_fourcc = self.camera.get(cv2.CAP_PROP_FOURCC)
+            
+            self.logger.info(f"Camera settings - Resolution: {actual_width}x{actual_height}, FPS: {actual_fps}")
+            self.logger.info(f"Camera fourcc: {''.join([chr(int(actual_fourcc) >> 8 * i & 0xFF) for i in range(4)])}")
             
             self.camera_running = True
             self.camera_thread = threading.Thread(target=self._camera_loop)

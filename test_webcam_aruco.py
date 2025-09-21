@@ -109,13 +109,33 @@ def main():
     detector = ArucoDetector(
         dictionary_type=cv2.aruco.DICT_6X6_250,
         marker_size=0.02,  # 20mm markers
+        max_reprojection_error=8.0,  # pixels
     )
     
-    # Add basic camera calibration for pose estimation
-    # These are rough estimates for a typical webcam - replace with actual calibration
+    cap = cv2.VideoCapture(0)
+    # Try to open webcam first to get actual capabilities
+    if not cap.isOpened():
+        print("Error: Could not open webcam")
+        return
+    
+
+    # Set resolution
+    # width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # Change this to desired width
+    # height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # Change this to desired height
+    width = 1920
+    height = 1080
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    print(f"Actual resolution: {width}x{height}")
+    
+    fx, fy = 800, 800  # Base focal lengths
+    
+    cx = width / 2.0   # Principal point at center
+    cy = height / 2.0
+    
     camera_matrix = np.array([
-        [800, 0, 320],
-        [0, 800, 240], 
+        [fx, 0, cx],
+        [0, fy, cy], 
         [0, 0, 1]
     ], dtype=np.float32)
     distortion_coeffs = np.zeros(5, dtype=np.float32)  # Assume no distortion
@@ -138,20 +158,11 @@ def main():
     else:
         print(f"No {calibration_file} found. Save a frame with 'c' to calibrate.")
 
-    # Note: marker_positions will be loaded later if calibration succeeds
-    
-    # Try to open webcam
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Error: Could not open webcam")
-        return
-    
-    # Set resolution (adjust as needed)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    
     frame_count = 0
     fps_start = time.time()
+    
+    # Initialize persistent camera pose for stable display
+    last_cam_pose = None
     
     while True:
         ret, frame = cap.read()
@@ -170,36 +181,36 @@ def main():
         info_text.append(f"Markers detected: {len(detected_markers)}")
         info_text.append("Keys: q=quit, s=save, c=calibrate")
         
-        cam_pose = None
-        if detected_markers:
-            marker_ids = [m.marker_id for m in detected_markers]
-            info_text.append(f"IDs: {marker_ids}")
-            
-            # Show individual marker info
-            # for i, m in enumerate(detected_markers):
-            #     info_text.append(f"Marker {m.marker_id}: conf={m.confidence:.2f}")
-            
-            # Try to estimate camera pose
-            cam_pose = detector.estimate_camera_pose(detected_markers)
-            
-            if cam_pose:
-                info_text.append(f"Cam pos: [{cam_pose.translation[0]:.3f}, {cam_pose.translation[1]:.3f}, {cam_pose.translation[2]:.3f}]")
-                info_text.append(f"Confidence: {cam_pose.confidence:.2f}")
-                info_text.append(f"Used {cam_pose.num_markers_used} markers")
-            else:
-                # Debug why pose estimation failed
-                if hasattr(detector, 'marker_positions') and detector.marker_positions:
-                    known_markers = [m for m in detected_markers if m.marker_id in detector.marker_positions]
-                    info_text.append(f"Known markers: {len(known_markers)}/{len(detected_markers)}")
-                else:
-                    info_text.append("No marker positions loaded - press 'c' to calibrate")
+        # Try to estimate camera pose if markers are detected
+        marker_ids = [m.marker_id for m in detected_markers or []]
+        info_text.append(f"IDs: {marker_ids}")
+        
+        # Try to estimate camera pose
+        cam_pose = detector.estimate_camera_pose(detected_markers)
+        
+        if cam_pose:
+            # Update persistent pose with new estimate
+            last_cam_pose = cam_pose
+        # Debug why pose estimation failed
+        if hasattr(detector, 'marker_positions') and detector.marker_positions:
+            known_markers = [m for m in detected_markers if m.marker_id in detector.marker_positions]
+            info_text.append(f"Known markers: {len(known_markers)}/{len(detected_markers)}")
+        else:
+            info_text.append("No marker positions loaded - press 'c' to calibrate")
+        
+        # Always display camera pose info if we have it (even when no markers detected)
+        if last_cam_pose:
+            info_text.append(f"Cam pos: [{last_cam_pose.translation[0]:.3f}, {last_cam_pose.translation[1]:.3f}, {last_cam_pose.translation[2]:.3f}]")
+            info_text.append(f"Confidence: {last_cam_pose.confidence:.2f}")
+            info_text.append(f"Used {last_cam_pose.num_markers_used} markers")
+        else:
+            info_text.append("Cam pos: [No pose available]")
         
         # Calculate FPS
         frame_count += 1
-        if frame_count % 30 == 0:
-            fps = 30 / (time.time() - fps_start)
-            fps_start = time.time()
-            info_text.append(f"FPS: {fps:.1f}")
+        fps = 1 / (time.time() - fps_start)
+        fps_start = time.time()
+        info_text.append(f"FPS: {fps:.1f}")
         
         # Draw info text
         y_offset = 30

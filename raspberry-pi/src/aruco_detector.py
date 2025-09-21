@@ -44,7 +44,8 @@ class ArucoDetector:
     
     def __init__(self, 
                  dictionary_type: int = cv2.aruco.DICT_6X6_250,
-                 marker_size: float = 0.05,  # meters
+                 marker_size: float = 0.02,  # meters
+                 max_reprojection_error: float = 3.0,  # pixels
                  camera_matrix: Optional[np.ndarray] = None,
                  distortion_coeffs: Optional[np.ndarray] = None):
         """
@@ -84,10 +85,8 @@ class ArucoDetector:
         
         # Marker positions in world coordinates (loaded from config)
         self.marker_positions: Dict[int, np.ndarray] = {}
-        
-        # Pose estimation settings
-        self.min_markers_for_pose = 2
-        self.max_reprojection_error = 2.0  # pixels
+        self.min_markers_for_pose = 5
+        self.max_reprojection_error = max_reprojection_error
         
         self.logger.info(f"ArUco detector initialized with dictionary {dictionary_type}")
     

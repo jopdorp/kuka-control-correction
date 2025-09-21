@@ -233,7 +233,7 @@ class ArucoDetector:
             Estimated camera pose or None if insufficient data
         """
         if len(detected_markers) < self.min_markers_for_pose:
-            self.logger.warning(f"Insufficient markers for pose estimation: {len(detected_markers)}")
+            self.logger.debug(f"Insufficient markers for pose estimation: {len(detected_markers)}")
             return None
         
         # Filter markers with known world positions
@@ -241,7 +241,7 @@ class ArucoDetector:
                         if m.marker_id in self.marker_positions]
         
         if len(valid_markers) < self.min_markers_for_pose:
-            self.logger.warning(f"Insufficient known markers: {len(valid_markers)}")
+            self.logger.debug(f"Insufficient known markers: {len(valid_markers)}")
             return None
         
         # Prepare point correspondences for PnP
@@ -271,7 +271,7 @@ class ArucoDetector:
         )
         
         if not success or inliers is None:
-            self.logger.debug("PnP solve failed")
+            self.logger.warning("PnP solve failed")
             return None
         
         # Calculate confidence based on inlier ratio

@@ -48,12 +48,6 @@ Thumbs.db
 *.log
 logs/
 
-# Camera calibration and configuration files (may contain sensitive data)
-camera_calibration.npz
-calibration_data/
-*.pkl
-*.pickle
-
 # Test outputs and temporary files
 test_outputs/
 temp/

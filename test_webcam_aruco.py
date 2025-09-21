@@ -55,10 +55,11 @@ def calibrate_from_photo(detector, photo_path):
             
             print(f"Marker {m.marker_id} at image pos: [{center[0]:.1f}, {center[1]:.1f}], size: {marker_size_px:.1f}px")
         
-        # Calculate scale using actual marker size (20mm = 0.02m)
+        # Calculate scale using detector's marker size
         avg_marker_size_px = np.mean(marker_sizes_px)
-        marker_size_real = 0.02  # 2cm in meters
+        marker_size_real = detector.marker_size  # Use detector's marker size
         pixels_per_meter = avg_marker_size_px / marker_size_real
+        print(f"Using marker size: {marker_size_real*1000:.0f}mm ({marker_size_real:.3f}m)")
         print(f"Calibrated scale: {pixels_per_meter:.1f} pixels per meter")
         print(f"Average marker size in image: {avg_marker_size_px:.1f} pixels")
         
@@ -109,15 +110,11 @@ def main():
     # Initialize detector with tuned parameters
     detector = ArucoDetector(
         dictionary_type=cv2.aruco.DICT_6X6_250,
-        marker_size=0.02,  # 20mm markers
+        marker_size=0.03,  # 30mm markers
         max_reprojection_error=8.0,  # pixels
     )
     
     cap = cv2.VideoCapture(0)
-    # Try to open webcam first to get actual capabilities
-    if not cap.isOpened():
-        print("Error: Could not open webcam")
-        return
     
     # Set MJPG format for better frame rates
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -132,35 +129,50 @@ def main():
     # Set frame rate
     cap.set(cv2.CAP_PROP_FPS, 30)
     
-    fx, fy = 800, 800  # Base focal lengths
+    # Try to load camera calibration
+    calibration_file = "camera_calibration.npz"
+    if os.path.exists(calibration_file):
+        print(f"Loading camera calibration from {calibration_file}...")
+        try:
+            calib_data = np.load(calibration_file)
+            camera_matrix = calib_data['camera_matrix']
+            distortion_coeffs = calib_data['distortion_coeffs']
+            calibration_error = float(calib_data['calibration_error'])
+            print(f"Camera calibration loaded successfully!")
+            print(f"Reprojection error: {calibration_error:.3f} pixels")
+            print(f"Focal lengths: fx={camera_matrix[0,0]:.1f}, fy={camera_matrix[1,1]:.1f}")
+            print(f"Principal point: cx={camera_matrix[0,2]:.1f}, cy={camera_matrix[1,2]:.1f}")
+            print(f"Distortion coeffs: {distortion_coeffs.flatten()}")
+        except Exception as e:
+            print(f"No camera calibration found at {calibration_file}")
+            print("Run 'python camera_calibration.py' to calibrate your camera and rerun")
+            return
+
+    # fx, fy = 800, 800  # Base focal lengths
     
-    cx = width / 2.0   # Principal point at center
-    cy = height / 2.0
+    # cx = width / 2.0   # Principal point at center
+    # cy = height / 2.0
     
-    camera_matrix = np.array([
-        [fx, 0, cx],
-        [0, fy, cy], 
-        [0, 0, 1]
-    ], dtype=np.float32)
-    distortion_coeffs = np.zeros(5, dtype=np.float32)  # Assume no distortion
-    
+    # camera_matrix = np.array([
+    #     [fx, 0, cx],
+    #     [0, fy, cy], 
+    #     [0, 0, 1]
+    # ], dtype=np.float32)
+    # distortion_coeffs = np.zeros(5, dtype=np.float32)  # Assume no distortion
+
     detector.camera_matrix = camera_matrix
     detector.distortion_coeffs = distortion_coeffs
     
     # Try to load marker positions from a saved calibration
-    calibration_file = "marker_calibration.jpg"
-    if os.path.exists(calibration_file):
-        print(f"Found {calibration_file}, loading marker positions...")
-        marker_positions = calibrate_from_photo(detector, calibration_file)
-        if marker_positions:
-            detector.load_marker_positions(marker_positions)
-            print("Marker positions loaded successfully!")
-        else:
-            print("Failed to load marker positions from photo")
-            print("The existing calibration file might be incompatible.")
-            print("Press 'c' during live view to recalibrate with current camera.")
+    calibration_file = "charuco_board.png"
+    print(f"Found {calibration_file}, loading marker positions...")
+    marker_positions = calibrate_from_photo(detector, calibration_file)
+    if marker_positions:
+        detector.load_marker_positions(marker_positions)
+        print("Marker positions loaded successfully!")
     else:
-        print(f"No {calibration_file} found. Save a frame with 'c' to calibrate.")
+        print("Failed to load marker positions from calibration photo")
+        print("PnP pose estimation will not work without marker positions")
 
     frame_count = 0
     fps_start = time.time()
@@ -237,25 +249,6 @@ def main():
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             break
-        elif key == ord('s'):
-            filename = f"aruco_test_frame_{int(time.time())}.jpg"
-            cv2.imwrite(filename, display_frame)
-            print(f"Saved frame as {filename}")
-        elif key == ord('c'):
-            # Save current frame for calibration
-            calibration_file = "marker_calibration.jpg"
-            cv2.imwrite(calibration_file, frame)
-            print(f"Saved calibration image as {calibration_file}")
-            
-            # Try to calibrate from this frame
-            print("Attempting to calibrate marker positions...")
-            marker_positions = calibrate_from_photo(detector, calibration_file)
-            if marker_positions:
-                detector.load_marker_positions(marker_positions)
-                print("Calibration successful! Pose estimation now enabled.")
-            else:
-                print("Calibration failed. Make sure at least 2 markers are visible.")
-    
     # Cleanup
     cap.release()
     cv2.destroyAllWindows()

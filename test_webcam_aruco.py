@@ -8,6 +8,7 @@ import os
 import cv2
 import numpy as np
 import time
+from scipy.spatial.transform import Rotation as R
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'raspberry-pi', 'src'))
@@ -201,10 +202,17 @@ def main():
         # Always display camera pose info if we have it (even when no markers detected)
         if last_cam_pose:
             info_text.append(f"Cam pos: [{last_cam_pose.translation[0]:.3f}, {last_cam_pose.translation[1]:.3f}, {last_cam_pose.translation[2]:.3f}]")
+            
+            # Convert rotation vector to Euler angles (in degrees) for display
+            rotation_matrix = last_cam_pose.rotation_matrix
+            euler_angles = R.from_matrix(rotation_matrix).as_euler('xyz', degrees=True)
+            info_text.append(f"Cam rot: [{euler_angles[0]:.1f}°, {euler_angles[1]:.1f}°, {euler_angles[2]:.1f}°]")
+            
             info_text.append(f"Confidence: {last_cam_pose.confidence:.2f}")
             info_text.append(f"Used {last_cam_pose.num_markers_used} markers")
         else:
             info_text.append("Cam pos: [No pose available]")
+            info_text.append("Cam rot: [No rotation available]")
         
         # Calculate FPS
         frame_count += 1

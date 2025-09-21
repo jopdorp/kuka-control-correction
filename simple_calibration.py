@@ -60,6 +60,19 @@ def main():
     # Open camera
     cap = cv2.VideoCapture(0)
     
+    # Set MJPG format for better frame rates
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+    cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+    
+    # Set resolution
+    width = 1920
+    height = 1080
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    
+    # Set frame rate
+    cap.set(cv2.CAP_PROP_FPS, 30)
+        
     # Storage for calibration
     all_corners = []
     all_ids = []
@@ -136,12 +149,14 @@ def main():
                 print(f"Camera matrix:\n{camera_matrix}")
                 print(f"Distortion coefficients: {dist_coeffs.flatten()}")
                 
-                # Save results
+                # Save results (also include calibration image size for later scaling)
+                calib_img_size = np.array(gray.shape[::-1], dtype=np.int32)  # (width, height)
                 np.savez('camera_calibration.npz', 
                          camera_matrix=camera_matrix, 
                          distortion_coeffs=dist_coeffs,
-                         calibration_error=ret)
-                print("Saved to camera_calibration.npz")
+                         calibration_error=ret,
+                         image_size=calib_img_size)
+                print("Saved to camera_calibration.npz (with image_size)")
                 break
             else:
                 print(f"Need more images. Have {len(all_corners)}, need at least 10")

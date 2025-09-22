@@ -2,10 +2,10 @@
   "boards": [
     {
       "board_id": "board_1", 
-      "squares_x": 5,
-      "squares_y": 4,
+      "squares_x": 4,
+      "squares_y": 3,
       "square_size": 0.05,
-      "marker_size": 0.035,
+      "marker_size": 0.03,
       "dictionary_type": 10,
       "expected_plane": [100.0, 200.0, 0.0, 0.0, 0.0, 0.0]
     },
@@ -13,17 +13,17 @@
       "board_id": "board_2",
       "squares_x": 4,
       "squares_y": 3, 
-      "square_size": 0.04,
-      "marker_size": 0.028,
+      "square_size": 0.05,
+      "marker_size": 0.03,
       "dictionary_type": 10,
       "expected_plane": [300.0, 150.0, 50.0, 0.0, 0.0, 90.0]
     },
     {
       "board_id": "board_3",
-      "squares_x": 6,
-      "squares_y": 5,
-      "square_size": 0.03,
-      "marker_size": 0.021,
+      "squares_x": 4,
+      "squares_y": 3,
+      "square_size": 0.05,
+      "marker_size": 0.03,
       "dictionary_type": 10,
       "expected_plane": [50.0, 350.0, 25.0, 0.0, 45.0, 0.0]
     }

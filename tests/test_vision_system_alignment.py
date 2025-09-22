@@ -26,8 +26,7 @@ def make_controller_state(ts: float, x_mm: float) -> dict:
 
 def create_test_system():
     """Create a test system with ChArUco configuration."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = "test_boards.json"
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")
     cfg.max_time_skew = 0.2  # seconds
     cfg.max_correction = 1000.0  # disable clamping for test
     cfg.max_board_position_error = 100.0  # mm
@@ -66,8 +65,7 @@ def create_mock_detected_board():
 
 def test_system_requires_charuco_config():
     """Test that system initialization requires ChArUco configuration."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = ""  # Empty config file
+    cfg = SystemConfig(charuco_boards_config_file="")  # Empty config file
     
     system = VisionCorrectionSystem(cfg)
     
@@ -122,8 +120,7 @@ def test_stale_controller_state_handling():
 
 def test_charuco_board_processing_without_detector():
     """Test that processing returns None when ChArUco detector is not initialized."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = "test_boards.json"
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")
     system = VisionCorrectionSystem(cfg)
     
     # Don't initialize detectors

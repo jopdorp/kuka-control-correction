@@ -54,11 +54,6 @@ temp/
 tmp/
 *.tmp
 
-# Hardware-specific config files (should be customized per deployment)
-robot_config.json
-marker_positions.json
-system_config.yaml
-
 # KUKA-specific files that may contain proprietary info
 *.src.bak
 *.dat.bak

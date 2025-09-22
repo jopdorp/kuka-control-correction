@@ -15,8 +15,7 @@ from vision_correction_system import VisionCorrectionSystem, SystemConfig, Corre
 
 def test_system_construction():
     """Test basic system construction with ChArUco configuration."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = "test_boards.json"  # Required field
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")  # Required field
     
     system = VisionCorrectionSystem(cfg)
     assert system.config is cfg
@@ -36,8 +35,7 @@ def test_system_construction():
 
 def test_send_correction_enqueues_message():
     """Test that correction data is properly enqueued for transmission."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = "test_boards.json"  # Required field
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")  # Required field
     
     system = VisionCorrectionSystem(cfg)
     cd = CorrectionData(
@@ -59,8 +57,7 @@ def test_send_correction_enqueues_message():
 
 def test_system_statistics_initialization():
     """Test that system statistics are properly initialized."""
-    cfg = SystemConfig()
-    cfg.charuco_boards_config_file = "test_boards.json"
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")
     
     system = VisionCorrectionSystem(cfg)
     status = system.get_system_status()

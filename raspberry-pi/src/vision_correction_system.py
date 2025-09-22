@@ -21,18 +21,19 @@ import collections
 from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
 from charuco_board_matcher import CharucoBoardMatcher, BoardMatchResult
+from charuco_board_inference import infer_charuco_board_config_from_image
 
 
 @dataclass
 class SystemConfig:
     """Configuration for the vision correction system."""
+    # ChArUco board settings (required)
+    charuco_boards_config_file: str  # Path to ChArUco boards configuration file (required)
+    
     # Camera settings
     camera_index: int = 0
     camera_resolution: tuple = (1920, 1080)
     camera_fps: int = 30
-    
-    # ChArUco board settings (required)
-    charuco_boards_config_file: str  # Path to ChArUco boards configuration file (required)
     
     # Robot settings
     robot_model: str = "KR250_R2700-2"
@@ -59,6 +60,63 @@ class SystemConfig:
     # Buffering and sync
     buffer_size: int = 200  # number of samples to keep in deques
     max_time_skew: float = 0.5  # seconds, allowable difference between frame and controller state
+    
+    @classmethod
+    def from_json(cls, config_file: str) -> 'SystemConfig':
+        """
+        Load configuration from JSON file.
+        
+        Args:
+            config_file: Path to JSON configuration file
+            
+        Returns:
+            SystemConfig instance
+        """
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+        
+        # Create config with file-specified values
+        config = cls(
+            charuco_boards_config_file=config_data.get('files', {}).get('charuco_boards_config', 'charuco_boards_config.json')
+        )
+        
+        # Update camera settings
+        camera_config = config_data.get('camera', {})
+        config.camera_index = camera_config.get('index', config.camera_index)
+        config.camera_resolution = tuple(camera_config.get('resolution', config.camera_resolution))
+        config.camera_fps = camera_config.get('fps', config.camera_fps)
+        
+        # Update robot settings
+        robot_config = config_data.get('robot', {})
+        config.robot_model = robot_config.get('model', config.robot_model)
+        
+        # Update communication settings
+        comm_config = config_data.get('communication', {})
+        config.controller_ip = comm_config.get('controller_ip', config.controller_ip)
+        config.controller_port = comm_config.get('controller_port', config.controller_port)
+        config.communication_timeout = comm_config.get('timeout', config.communication_timeout)
+        
+        # Update vision correction settings
+        vision_config = config_data.get('vision_correction', {})
+        config.position_threshold = vision_config.get('position_threshold', config.position_threshold)
+        config.rotation_threshold = vision_config.get('rotation_threshold', config.rotation_threshold)
+        config.confidence_threshold = vision_config.get('confidence_threshold', config.confidence_threshold)
+        config.max_correction = vision_config.get('max_correction', config.max_correction)
+        
+        # Update board matching settings
+        matching_config = config_data.get('board_matching', {})
+        config.max_board_position_error = matching_config.get('max_position_error', config.max_board_position_error)
+        config.max_board_rotation_error = matching_config.get('max_rotation_error', config.max_board_rotation_error)
+        config.board_position_weight = matching_config.get('position_weight', config.board_position_weight)
+        config.board_rotation_weight = matching_config.get('rotation_weight', config.board_rotation_weight)
+        
+        # Update processing settings
+        processing_config = config_data.get('processing', {})
+        config.processing_rate = processing_config.get('rate', config.processing_rate)
+        config.buffer_size = processing_config.get('buffer_size', config.buffer_size)
+        config.max_time_skew = processing_config.get('max_time_skew', config.max_time_skew)
+        
+        return config
 
 
 @dataclass
@@ -185,22 +243,27 @@ class VisionCorrectionSystem:
             True if successful
         """
         try:
-            with open(config_file, 'r') as f:
-                boards_data = json.load(f)
-            
-            # Parse board configurations
-            self.charuco_board_configs = []
-            for board_data in boards_data.get('boards', []):
-                config = CharucoBoardConfig(
-                    board_id=board_data['board_id'],
-                    squares_x=board_data['squares_x'],
-                    squares_y=board_data['squares_y'],
-                    square_size=board_data['square_size'],
-                    marker_size=board_data['marker_size'],
-                    dictionary_type=board_data.get('dictionary_type', cv2.aruco.DICT_6X6_250),
-                    expected_plane=board_data['expected_plane']
-                )
-                self.charuco_board_configs.append(config)
+            # Allow specifying a PNG image path instead of JSON for board config
+            if config_file.lower().endswith('.png'):
+                inferred = infer_charuco_board_config_from_image(config_file)
+                self.charuco_board_configs = [inferred]
+            else:
+                with open(config_file, 'r') as f:
+                    boards_data = json.load(f)
+                
+                # Parse board configurations
+                self.charuco_board_configs = []
+                for board_data in boards_data.get('boards', []):
+                    config = CharucoBoardConfig(
+                        board_id=board_data['board_id'],
+                        squares_x=board_data['squares_x'],
+                        squares_y=board_data['squares_y'],
+                        square_size=board_data['square_size'],
+                        marker_size=board_data['marker_size'],
+                        dictionary_type=board_data.get('dictionary_type', cv2.aruco.DICT_6X6_250),
+                        expected_plane=board_data['expected_plane']
+                    )
+                    self.charuco_board_configs.append(config)
             
             # Initialize ChArUco detector and matcher
             if self.charuco_board_configs:
@@ -223,7 +286,7 @@ class VisionCorrectionSystem:
             else:
                 self.logger.error("No valid ChArUco board configurations found")
                 return False
-                
+        
         except Exception as e:
             self.logger.error(f"Failed to load ChArUco boards config: {e}")
             return False
@@ -575,11 +638,16 @@ class VisionCorrectionSystem:
         best_match = matched_results[0]  # Already sorted by error
         return self._calculate_charuco_correction(best_match, camera_pose_base)
     
-    def _get_controller_state_for_timestamp(self, ts: float) -> Optional[Dict[str, Any]]:
+    def _get_controller_state_for_timestamp(self, ts: Optional[float]) -> Optional[Dict[str, Any]]:
         """Return the controller state closest in time to ts within max_time_skew."""
         with self.controller_state_lock:
             if not self.controller_state_buffer:
                 return None
+            
+            # If ts is None, return the latest controller state
+            if ts is None:
+                return dict(self.latest_controller_state) if self.latest_controller_state else None
+            
             # Find nearest by absolute delta
             best = None
             best_dt = None
@@ -598,7 +666,7 @@ class VisionCorrectionSystem:
     def _calculate_correction(
         self,
         expected_pose: RobotPose,
-        actual_pose: CameraPose,
+        actual_pose: DetectedCharucoBoard,
     ) -> Optional[CorrectionData]:
         """Calculate position correction (BASE frame)."""
         # Normalize units and orientations

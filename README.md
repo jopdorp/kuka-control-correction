@@ -74,19 +74,29 @@ pip3 install numpy opencv-contrib-python
 
 # Clone and configure
 git clone <this-repo>
-cd kuka-control-correction/raspberry-pi
+cd kuka-control-correction
 
-# Edit configuration for your setup
-nano src/vision_correction_system.py  # Set controller IP, camera params, marker positions
+# Install Python dependencies
+pip3 install -r requirements.txt
+
+# Configure the system (edit JSON configuration files)
+# See CONFIGURATION.md for detailed configuration guide
+nano system_config.json          # Main system configuration
+nano charuco_boards_config.json  # ChArUco board definitions
+
+# Calibrate camera (required for accurate detection)
+python3 simple_calibration.py
 
 # Test camera and detection
-python3 src/aruco_detector.py
+python3 test_webcam_aruco.py
 
-# Start helper (recommended on Pi)
-python3 src/correction_helper.py --kuka-ip <KUKA_PC_IP>
+# Validate configuration before starting
+./start_tracking.py --validate-only
 
-# In another session, run vision correction system
-python3 src/vision_correction_system.py
+# Start the vision correction system
+./start_tracking.py
+# or with verbose logging:
+./start_tracking.py --verbose
 ```
 
 ### 3. KUKA Controller Setup
@@ -101,27 +111,56 @@ See detailed setup instructions in `kuka-controller/README.md`
 
 ## Configuration
 
+**⚠️ Configuration System**: The system now uses JSON configuration files instead of hardcoded values. See `CONFIGURATION.md` for detailed configuration instructions.
+
 ### Camera Calibration
 
 Generate camera intrinsics using OpenCV:
 
+```bash
+# Run the included calibration script
+python3 simple_calibration.py
+```
+
+The calibration generates a `camera_calibration.npz` file with:
 ```python
-# Use standard checkerboard calibration
 camera_matrix = [[fx, 0, cx],
                  [0, fy, cy], 
                  [0, 0, 1]]
 distortion_coeffs = [k1, k2, p1, p2, k3]
 ```
 
-### ArUco Marker Setup
+### ChArUco Board Configuration
 
-```python
-# Define marker positions in robot base frame
-marker_positions = {
-    23: {  # Marker ID
-        'position': [100.0, 200.0, 0.0],      # X,Y,Z in mm
-        'orientation': [0.0, 0.0, 0.0]        # A,B,C in degrees
+Define boards in `charuco_boards_config.json`:
+
+```json
+{
+  "boards": [
+    {
+      "board_id": "station_1_board",
+      "squares_x": 7,
+      "squares_y": 5,
+      "square_size": 0.04,
+      "marker_size": 0.03,
+      "dictionary_type": 10,
+      "expected_plane": [450.0, 200.0, 10.0, 0.0, 0.0, 0.0]
     }
+  ]
+}
+```
+
+### System Configuration
+
+Configure system parameters in `system_config.json`:
+
+```json
+{
+  "camera": {"resolution": [1920, 1080], "fps": 30},
+  "vision_correction": {
+    "position_threshold": 0.5,
+    "confidence_threshold": 0.7
+  }
 }
 ```
 

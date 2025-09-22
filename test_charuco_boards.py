@@ -21,9 +21,8 @@ from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig
 from charuco_board_matcher import CharucoBoardMatcher
 
 def create_test_config():
-    """Create a test configuration with ChArUco boards enabled."""
+    """Create a test configuration for ChArUco boards."""
     config = SystemConfig()
-    config.use_charuco_boards = True
     config.charuco_boards_config_file = "charuco_boards_config.json"
     config.camera_index = 0
     config.max_board_position_error = 100.0  # mm
@@ -78,13 +77,6 @@ def test_board_detection():
                     camera_matrix=camera_matrix, 
                     distortion_coeffs=distortion_coeffs)
         
-        # Create mock marker positions file
-        if not os.path.exists("marker_positions.json"):
-            print("Creating mock marker positions...")
-            marker_data = {"markers": {}}
-            with open("marker_positions.json", 'w') as f:
-                json.dump(marker_data, f)
-        
         # Create mock robot config file
         if not os.path.exists("robot_config.json"):
             print("Creating mock robot config...")
@@ -100,7 +92,6 @@ def test_board_detection():
         # Load configurations
         if system.load_configuration_files(
             "camera_calibration.npz",
-            "marker_positions.json", 
             "robot_config.json"
         ):
             print("✓ Configuration loaded successfully")

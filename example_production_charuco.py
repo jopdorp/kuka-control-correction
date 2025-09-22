@@ -11,11 +11,10 @@ import logging
 from vision_correction_system import VisionCorrectionSystem, SystemConfig
 
 def create_production_config():
-    """Create production configuration for multi-board system."""
+    """Create production configuration for ChArUco board system."""
     config = SystemConfig()
     
-    # Enable ChArUco boards
-    config.use_charuco_boards = True
+    # ChArUco boards configuration file
     config.charuco_boards_config_file = "production_boards.json"
     
     # Camera settings for production
@@ -103,11 +102,10 @@ def main():
     print("Loading calibration and configuration files...")
     if system.load_configuration_files(
         'camera_calibration.npz',     # Camera intrinsics
-        'marker_positions.json',      # Fallback ArUco markers (can be empty)
         'robot_config.json'           # Robot kinematics and tool offset
     ):
         print("✓ Configuration loaded successfully")
-        print(f"✓ ChArUco mode enabled with {len(system.charuco_board_configs)} boards")
+        print(f"✓ ChArUco board system enabled with {len(system.charuco_board_configs)} boards")
     else:
         print("✗ Failed to load configuration - check file paths")
         return

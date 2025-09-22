@@ -1,27 +1,26 @@
-# Multiple ChArUco Board Support
+# ChArUco Board Vision Correction System
 
-This document describes the new functionality for supporting multiple ChArUco boards simultaneously in the KUKA vision correction system.
+This document describes the ChArUco board-based vision correction system for KUKA robots.
 
 ## Overview
 
-The system now supports detecting and tracking multiple ChArUco boards at the same time, using a least-error algorithm to match detected boards with expected board configurations based on the current camera pose.
+The system detects and tracks multiple ChArUco boards simultaneously, using a least-error algorithm to match detected boards with expected board configurations based on the current camera pose.
 
 ## Key Features
 
 - **Multiple Board Detection**: Detect several different ChArUco boards in a single image
 - **Intelligent Matching**: Use Hungarian algorithm to match detected boards with expected configurations
 - **Flexible Configuration**: JSON-based configuration for board specifications and expected positions
-- **Backwards Compatibility**: Existing ArUco marker functionality is preserved
+- **ChArUco Only**: System exclusively uses ChArUco boards for high accuracy and reliability
 
 ## Configuration
 
-### Enabling ChArUco Board Mode
+### Basic Setup
 
-In your `SystemConfig`, set:
+The system requires a ChArUco boards configuration file:
 
 ```python
 config = SystemConfig()
-config.use_charuco_boards = True
 config.charuco_boards_config_file = "charuco_boards_config.json"
 ```
 
@@ -134,7 +133,6 @@ from vision_correction_system import VisionCorrectionSystem, SystemConfig
 
 # Configure for ChArUco boards
 config = SystemConfig()
-config.use_charuco_boards = True
 config.charuco_boards_config_file = "my_boards.json"
 
 # Initialize system
@@ -143,7 +141,6 @@ system = VisionCorrectionSystem(config)
 # Load calibration and start
 system.load_configuration_files(
     "camera_calibration.npz",
-    "marker_positions.json",  # Still needed for ArUco fallback
     "robot_config.json"
 )
 system.start_system()
@@ -204,8 +201,10 @@ matches = matcher.match_boards(detected_boards, camera_pose)
 - Verify tool-to-camera transformation accuracy
 - Adjust matching weights if position/rotation priorities differ
 
-### System Fallback
-If ChArUco board detection fails, the system automatically falls back to traditional ArUco marker mode.
+### System Requirements
+- ChArUco board configuration file is required
+- Camera calibration file must be provided
+- Robot configuration with tool-to-camera transform required
 
 ## Integration with KUKA System
 

@@ -11,6 +11,7 @@ import json
 import logging
 import time
 import threading
+import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import socket
@@ -19,6 +20,8 @@ import collections
 
 from aruco_detector import ArucoDetector, CameraPose
 from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
+from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
+from charuco_board_matcher import CharucoBoardMatcher, BoardMatchResult
 
 
 @dataclass
@@ -33,6 +36,10 @@ class SystemConfig:
     aruco_dictionary: int = cv2.aruco.DICT_6X6_250
     marker_size: float = 0.02  # meters (20 mm)
     
+    # ChArUco board settings
+    use_charuco_boards: bool = False  # Enable multi-board ChArUco detection
+    charuco_boards_config_file: str = ""  # Path to ChArUco boards configuration file
+    
     # Robot settings
     robot_model: str = "KR250_R2700-2"
 
@@ -45,6 +52,12 @@ class SystemConfig:
     rotation_threshold: float = 0.01  # degrees
     confidence_threshold: float = 0.8
     max_correction: float = 5.0  # mm
+    
+    # Board matching settings
+    max_board_position_error: float = 50.0  # mm
+    max_board_rotation_error: float = 30.0  # degrees
+    board_position_weight: float = 1.0
+    board_rotation_weight: float = 0.1
     
     # Timing settings
     processing_rate: float = 30.0  # Hz
@@ -84,6 +97,11 @@ class VisionCorrectionSystem:
             dictionary_type=config.aruco_dictionary,
             marker_size=config.marker_size,
         )
+
+        # ChArUco board components (initialized when config is loaded)
+        self.charuco_detector = None
+        self.charuco_matcher = None
+        self.charuco_board_configs = []
 
         # TOOL->CAM transform (to be configured)
         self.T_tool_cam = np.eye(4)
@@ -138,7 +156,7 @@ class VisionCorrectionSystem:
             if not self.aruco_detector.load_camera_calibration(camera_calibration_file):
                 return False
             
-            # Load marker positions
+            # Load marker positions (for ArUco mode)
             with open(marker_positions_file, 'r') as f:
                 marker_data = json.load(f)
                 self.aruco_detector.load_marker_positions(marker_data['markers'])
@@ -154,11 +172,75 @@ class VisionCorrectionSystem:
                         np.array(camera_offset['rotation'])
                     )
             
+            # Load ChArUco board configuration if enabled
+            if self.config.use_charuco_boards and self.config.charuco_boards_config_file:
+                if not self._load_charuco_boards_config(self.config.charuco_boards_config_file):
+                    self.logger.warning("Failed to load ChArUco boards config, falling back to ArUco mode")
+                    self.config.use_charuco_boards = False
+            
             self.logger.info("Configuration files loaded successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to load configuration files: {e}")
+            return False
+    
+    def _load_charuco_boards_config(self, config_file: str) -> bool:
+        """
+        Load ChArUco boards configuration from file.
+        
+        Args:
+            config_file: Path to ChArUco boards configuration file
+            
+        Returns:
+            True if successful
+        """
+        try:
+            with open(config_file, 'r') as f:
+                boards_data = json.load(f)
+            
+            # Parse board configurations
+            self.charuco_board_configs = []
+            for board_data in boards_data.get('boards', []):
+                config = CharucoBoardConfig(
+                    board_id=board_data['board_id'],
+                    squares_x=board_data['squares_x'],
+                    squares_y=board_data['squares_y'],
+                    square_size=board_data['square_size'],
+                    marker_size=board_data['marker_size'],
+                    dictionary_type=board_data.get('dictionary_type', self.config.aruco_dictionary),
+                    expected_plane=board_data['expected_plane']
+                )
+                self.charuco_board_configs.append(config)
+            
+            # Initialize ChArUco detector and matcher
+            if self.charuco_board_configs:
+                # Get camera calibration from ArUco detector
+                camera_matrix = self.aruco_detector.camera_matrix
+                distortion_coeffs = self.aruco_detector.distortion_coeffs
+                
+                self.charuco_detector = CharucoBoardDetector(
+                    board_configs=self.charuco_board_configs,
+                    camera_matrix=camera_matrix,
+                    distortion_coeffs=distortion_coeffs
+                )
+                
+                self.charuco_matcher = CharucoBoardMatcher(
+                    board_configs=self.charuco_board_configs,
+                    max_position_error=self.config.max_board_position_error,
+                    max_rotation_error=self.config.max_board_rotation_error,
+                    position_weight=self.config.board_position_weight,
+                    rotation_weight=self.config.board_rotation_weight
+                )
+                
+                self.logger.info(f"Loaded {len(self.charuco_board_configs)} ChArUco board configurations")
+                return True
+            else:
+                self.logger.error("No valid ChArUco board configurations found")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load ChArUco boards config: {e}")
             return False
     
     def start_system(self) -> bool:
@@ -456,6 +538,14 @@ class VisionCorrectionSystem:
             frame = self.current_frame.copy()
             frame_ts = time.time()
         
+        # Choose detection method based on configuration
+        if self.config.use_charuco_boards and self.charuco_detector and self.charuco_matcher:
+            return self._process_charuco_boards(frame, frame_ts)
+        else:
+            return self._process_aruco_markers(frame, frame_ts)
+    
+    def _process_aruco_markers(self, frame: np.ndarray, frame_ts: float) -> Optional[CorrectionData]:
+        """Process frame using ArUco markers."""
         # Detect ArUco markers
         detected_markers = self.aruco_detector.detect_markers(frame)
         self.system_statistics['markers_detected'] += len(detected_markers)
@@ -477,6 +567,56 @@ class VisionCorrectionSystem:
         # Calculate correction from detected markers (continuous mode)
         correction = self._calculate_base_correction(detected_markers, frame_ts)
         return correction
+    
+    def _process_charuco_boards(self, frame: np.ndarray, frame_ts: float) -> Optional[CorrectionData]:
+        """Process frame using ChArUco boards."""
+        # Get current camera pose from robot TCP
+        with self.controller_state_lock:
+            if not self.latest_controller_state:
+                self.logger.debug("No controller state available")
+                return None
+            tcp = self.latest_controller_state.get('tcp', {})
+        
+        try:
+            # Extract current camera pose in base frame
+            t_mm = np.array([float(tcp.get('X', 0.0)), float(tcp.get('Y', 0.0)), float(tcp.get('Z', 0.0))])
+            r_deg = np.array([float(tcp.get('A', 0.0)), float(tcp.get('B', 0.0)), float(tcp.get('C', 0.0))])
+        except Exception:
+            self.logger.debug("Invalid controller state format")
+            return None
+
+        # Calculate current camera pose from TCP + tool->cam transform
+        T_base_tcp = pose_to_T(t_mm, r_deg)
+        T_base_cam = T_base_tcp @ self.T_tool_cam
+        camera_pose_base = np.concatenate([
+            T_base_cam[:3, 3],  # translation in mm
+            rotation_matrix_to_kuka_abc(T_base_cam[:3, :3])  # rotation in degrees
+        ])
+        
+        # Detect ChArUco boards
+        detected_boards = self.charuco_detector.detect_boards(frame)
+        self.system_statistics['markers_detected'] += len(detected_boards)  # Reuse marker count for boards
+        
+        if not detected_boards:
+            self.logger.debug("No ChArUco boards detected")
+            return None
+        
+        # Match detected boards with expected configurations
+        matched_results = self.charuco_matcher.match_boards(detected_boards, camera_pose_base)
+        
+        if not matched_results:
+            self.logger.debug("No boards successfully matched")
+            return None
+        
+        # Log successful matches
+        for result in matched_results:
+            self.logger.info(f"Matched board {result.matched_config.board_id}: "
+                           f"pos_err={result.position_error:.1f}mm, rot_err={result.rotation_error:.1f}deg, "
+                           f"conf={result.detected_board.confidence:.2f}")
+        
+        # Calculate correction using best matched board
+        best_match = matched_results[0]  # Already sorted by error
+        return self._calculate_charuco_correction(best_match, camera_pose_base)
     
     def _process_frame_with_command(self, move_command: MoveCommand) -> Optional[CorrectionData]:
         """Process current frame with move command."""
@@ -618,6 +758,99 @@ class VisionCorrectionSystem:
             sequence_id=self.sequence_counter,
         )
     
+    def _calculate_charuco_correction(self, 
+                                    match_result: BoardMatchResult,
+                                    current_camera_pose: np.ndarray) -> Optional[CorrectionData]:
+        """
+        Calculate position correction using ChArUco board match.
+        
+        Args:
+            match_result: Matched board result
+            current_camera_pose: Current camera pose in base frame [x, y, z, a, b, c]
+            
+        Returns:
+            Correction data or None if no correction needed
+        """
+        detected_board = match_result.detected_board
+        expected_config = match_result.matched_config
+        
+        # Calculate expected board pose in camera frame from current camera pose
+        T_base_cam = pose_to_T(current_camera_pose[:3], current_camera_pose[3:])
+        T_cam_base = np.linalg.inv(T_base_cam)
+        T_base_board_expected = pose_to_T(
+            np.array(expected_config.expected_plane[:3]),
+            np.array(expected_config.expected_plane[3:])
+        )
+        T_cam_board_expected = T_cam_base @ T_base_board_expected
+        
+        # Expected board pose in camera frame
+        expected_translation = T_cam_board_expected[:3, 3] / 1000.0  # mm to meters
+        expected_rotation_matrix = T_cam_board_expected[:3, :3]
+        
+        # Actual detected board pose in camera frame (already in meters)
+        actual_translation = detected_board.translation
+        actual_rotation_matrix = detected_board.rotation_matrix
+        
+        # Calculate position error (in mm)
+        position_error_m = actual_translation - expected_translation
+        position_error_mm = position_error_m * 1000.0
+        position_error_magnitude = np.linalg.norm(position_error_mm)
+        
+        # Calculate rotation error (in degrees)
+        rotation_error_rad = self._calculate_rotation_error_matrix(
+            actual_rotation_matrix, expected_rotation_matrix
+        )
+        rotation_error_deg = np.degrees(rotation_error_rad)
+        
+        # Create rotation error vector (simplified - just magnitude)
+        rotation_error_vector = np.array([0, 0, rotation_error_deg])
+        rotation_error_magnitude = rotation_error_deg
+        
+        # Check if correction is needed
+        if (position_error_magnitude < self.config.position_threshold and 
+            rotation_error_magnitude < self.config.rotation_threshold):
+            return None
+        
+        # Clamp translation correction
+        if position_error_magnitude > self.config.max_correction:
+            scale = self.config.max_correction / position_error_magnitude
+            position_error_mm = position_error_mm * scale
+        
+        self.sequence_counter += 1
+        return CorrectionData(
+            translation_correction=position_error_mm,
+            rotation_correction=rotation_error_vector,
+            confidence=detected_board.confidence,
+            timestamp=time.time(),
+            sequence_id=self.sequence_counter,
+        )
+    
+    def _calculate_rotation_error_matrix(self, R1: np.ndarray, R2: np.ndarray) -> float:
+        """
+        Calculate rotation error between two rotation matrices in radians.
+        
+        Args:
+            R1: Actual rotation matrix (3x3)
+            R2: Expected rotation matrix (3x3)
+            
+        Returns:
+            Rotation error angle in radians
+        """
+        try:
+            # Relative rotation
+            R_rel = R1.T @ R2
+            
+            # Calculate angle of rotation
+            trace = np.trace(R_rel)
+            # Clamp to valid range for acos
+            trace = np.clip(trace, -1.0, 3.0)
+            angle_rad = np.arccos((trace - 1) / 2)
+            
+            return angle_rad
+        except Exception:
+            # In case of numerical issues, return large error
+            return np.pi
+    
     def _send_correction(self, correction: CorrectionData):
         """Send correction to KUKA controller via TCP."""
         message = {
@@ -656,15 +889,21 @@ class VisionCorrectionSystem:
         }
     
     def get_current_frame_with_markers(self) -> Optional[np.ndarray]:
-        """Get current frame with detected markers drawn."""
+        """Get current frame with detected markers/boards drawn."""
         with self.frame_lock:
             if self.current_frame is None:
                 return None
             frame = self.current_frame.copy()
         
-        # Detect and draw markers
-        detected_markers = self.aruco_detector.detect_markers(frame)
-        return self.aruco_detector.draw_detected_markers(frame, detected_markers)
+        # Choose visualization based on configuration
+        if self.config.use_charuco_boards and self.charuco_detector:
+            # Detect and draw ChArUco boards
+            detected_boards = self.charuco_detector.detect_boards(frame)
+            return self.charuco_detector.draw_detected_boards(frame, detected_boards)
+        else:
+            # Detect and draw ArUco markers
+            detected_markers = self.aruco_detector.detect_markers(frame)
+            return self.aruco_detector.draw_detected_markers(frame, detected_markers)
 
 
 def main():
@@ -673,6 +912,14 @@ def main():
     
     # Load configuration
     config = SystemConfig()
+    
+    # Enable ChArUco boards if config file exists
+    if os.path.exists('charuco_boards_config.json'):
+        config.use_charuco_boards = True
+        config.charuco_boards_config_file = 'charuco_boards_config.json'
+        print("ChArUco boards configuration found - multi-board mode enabled")
+    else:
+        print("Using traditional ArUco marker mode")
     
     # Create and start system
     system = VisionCorrectionSystem(config)

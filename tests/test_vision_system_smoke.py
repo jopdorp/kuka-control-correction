@@ -1,5 +1,6 @@
 """
 Lightweight smoke tests for VisionCorrectionSystem that avoid starting threads.
+Tests basic functionality of the ChArUco-based vision correction system.
 """
 import os
 import sys
@@ -13,19 +14,29 @@ from vision_correction_system import VisionCorrectionSystem, SystemConfig, Corre
 
 
 def test_system_construction():
-    cfg = SystemConfig()
+    """Test basic system construction with ChArUco configuration."""
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")  # Required field
+    
     system = VisionCorrectionSystem(cfg)
     assert system.config is cfg
     assert system.camera is None
     assert system.tcp_socket is None
     assert system.processing_running is False
     assert system.communication_running is False
+    
+    # ChArUco-specific components should be initialized to None
+    assert system.charuco_detector is None
+    assert system.charuco_matcher is None
+    assert system.charuco_board_configs == []
+    
     status = system.get_system_status()
     assert 'statistics' in status
 
 
 def test_send_correction_enqueues_message():
-    cfg = SystemConfig()
+    """Test that correction data is properly enqueued for transmission."""
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")  # Required field
+    
     system = VisionCorrectionSystem(cfg)
     cd = CorrectionData(
         translation_correction=np.array([1.0, -2.0, 3.0]),
@@ -40,3 +51,21 @@ def test_send_correction_enqueues_message():
     assert msg['type'] == 'BASE_CORRECTION'
     assert msg['sequence_id'] == 1
     assert 'correction' in msg
+    assert 'confidence' in msg
+    assert msg['confidence'] == 0.9
+
+
+def test_system_statistics_initialization():
+    """Test that system statistics are properly initialized."""
+    cfg = SystemConfig(charuco_boards_config_file="test_boards.json")
+    
+    system = VisionCorrectionSystem(cfg)
+    status = system.get_system_status()
+    
+    assert 'statistics' in status
+    stats = status['statistics']
+    
+    # Check that expected statistics fields exist
+    expected_fields = ['frames_processed', 'corrections_sent', 'markers_detected']
+    for field in expected_fields:
+        assert field in stats

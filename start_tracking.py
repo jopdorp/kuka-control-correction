@@ -198,10 +198,11 @@ Examples:
                                 detected_boards = system.charuco_detector.detect_boards(frame)
                                 if detected_boards:
                                     print(f"Detected: {len(detected_boards)} boards")
-                                    for board in detected_boards:
-                                        if board.board_id:
-                                            print(f"  - {board.board_id}: {board.num_corners} corners, "
-                                                  f"conf={board.confidence:.2f}")
+                                    for i, board in enumerate(detected_boards):
+                                        print(
+                                            f"  - Board_{i}: {board.num_corners} corners, "
+                                            f"conf={board.confidence:.2f}"
+                                        )
                     
                     print("-" * 30)
                     last_status_time = current_time

@@ -10,9 +10,8 @@ import numpy as np
 # Ensure src is on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
 
-from vision_correction_system import VisionCorrectionSystem, SystemConfig
-from charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard
-from charuco_board_matcher import BoardMatchResult
+from vision_correction_system import VisionCorrectionSystem, SystemConfig  # type: ignore
+from charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
 
 
 def make_controller_state(ts: float, x_mm: float) -> dict:
@@ -36,7 +35,6 @@ def create_test_system():
     
     # Create mock board configurations
     board_config = CharucoBoardConfig(
-        board_id="test_board",
         squares_x=5,
         squares_y=4,
         square_size=0.05,
@@ -52,14 +50,13 @@ def create_test_system():
 def create_mock_detected_board():
     """Create a mock detected ChArUco board."""
     return DetectedCharucoBoard(
-        board_id=None,
         corners=np.random.rand(10, 1, 2).astype(np.float32),
         ids=np.arange(10),
         translation=np.array([0.1, 0.2, 0.5]),  # meters
         rotation=np.array([0.0, 0.0, 0.0]),
         rotation_matrix=np.eye(3),
         confidence=0.8,
-        num_corners=10
+        num_corners=10,
     )
 
 
@@ -127,7 +124,7 @@ def test_charuco_board_processing_without_detector():
     assert system.charuco_detector is None
     
     # Create mock frame
-    frame = np.ones((480, 640, 3), dtype=np.uint8) * 255
+    frame = np.ones((480, 640, 3), dtype=np.uint8) * 255  # noqa: F841
     
     # Should handle gracefully when no detector is available
     # Note: the actual _process_charuco_boards method would need to check for None detector

@@ -11,16 +11,15 @@ import os
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
 
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
-from charuco_board_matcher import CharucoBoardMatcher, BoardMatchResult
-from pose_utils import pose_to_T
+from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
+from charuco_board_matcher import CharucoBoardMatcher  # type: ignore
+from pose_utils import pose_to_T  # type: ignore
 
 
 @pytest.fixture
 def sample_board_config():
     """Sample ChArUco board configuration for testing."""
     return CharucoBoardConfig(
-        board_id="test_board",
         squares_x=5,
         squares_y=4,
         square_size=0.05,  # 5cm squares
@@ -47,21 +46,18 @@ def multiple_board_configs():
     """Multiple board configurations for testing."""
     return [
         CharucoBoardConfig(
-            board_id="board_1",
             squares_x=5, squares_y=4,
             square_size=0.05, marker_size=0.035,
             dictionary_type=cv2.aruco.DICT_6X6_250,
             expected_plane=[100.0, 200.0, 0.0, 0.0, 0.0, 0.0]
         ),
         CharucoBoardConfig(
-            board_id="board_2", 
             squares_x=4, squares_y=3,
             square_size=0.04, marker_size=0.028,
             dictionary_type=cv2.aruco.DICT_6X6_250,
             expected_plane=[300.0, 150.0, 50.0, 0.0, 0.0, 90.0]
         ),
         CharucoBoardConfig(
-            board_id="board_3",
             squares_x=6, squares_y=5,
             square_size=0.03, marker_size=0.021,
             dictionary_type=cv2.aruco.DICT_6X6_250,
@@ -83,9 +79,7 @@ class TestCharucoBoardDetector:
         
         assert len(detector.charuco_boards) == 3
         assert len(detector.charuco_detectors) == 3
-        assert "board_1" in detector.charuco_boards
-        assert "board_2" in detector.charuco_boards
-        assert "board_3" in detector.charuco_boards
+    # Boards are stored as a list; no string IDs anymore
     
     def test_detector_no_camera_calibration(self, sample_board_config):
         """Test detector behavior without camera calibration."""
@@ -142,8 +136,6 @@ class TestCharucoBoardMatcher:
         )
         
         assert len(matcher.board_configs) == 3
-        assert len(matcher.config_by_id) == 3
-        assert "board_1" in matcher.config_by_id
     
     def test_rotation_error_calculation(self, multiple_board_configs):
         """Test rotation error calculation."""
@@ -188,14 +180,13 @@ class TestCharucoBoardMatcher:
         detected_boards = []
         for i in range(2):
             board = DetectedCharucoBoard(
-                board_id=None,
                 corners=np.random.rand(10, 1, 2).astype(np.float32),
                 ids=np.arange(10),
                 translation=np.array([0.1 * i, 0.1 * i, 0.5]),  # meters
                 rotation=np.array([0.0, 0.0, 0.0]),
                 rotation_matrix=np.eye(3),
                 confidence=0.8,
-                num_corners=10
+                num_corners=10,
             )
             detected_boards.append(board)
         
@@ -227,16 +218,17 @@ class TestCharucoBoardMatcher:
         
         # Test with no board configs
         empty_matcher = CharucoBoardMatcher([])
-        detected_boards = [DetectedCharucoBoard(
-            board_id=None,
-            corners=np.random.rand(10, 1, 2).astype(np.float32),
-            ids=np.arange(10),
-            translation=np.array([0.0, 0.0, 0.5]),
-            rotation=np.array([0.0, 0.0, 0.0]),
-            rotation_matrix=np.eye(3),
-            confidence=0.8,
-            num_corners=10
-        )]
+        detected_boards = [
+            DetectedCharucoBoard(
+                corners=np.random.rand(10, 1, 2).astype(np.float32),
+                ids=np.arange(10),
+                translation=np.array([0.0, 0.0, 0.5]),
+                rotation=np.array([0.0, 0.0, 0.0]),
+                rotation_matrix=np.eye(3),
+                confidence=0.8,
+                num_corners=10,
+            )
+        ]
         matches = empty_matcher.match_boards(detected_boards, camera_pose)
         assert matches == []
 
@@ -262,22 +254,19 @@ class TestIntegration:
         
         # Create a test image (empty - won't detect anything, but tests the pipeline)
         test_image = np.ones((480, 640, 3), dtype=np.uint8) * 255
-        
+
         # Detect boards
         detected_boards = detector.detect_boards(test_image)
-        
+
         # Match boards (even if empty)
         camera_pose = np.array([0, 0, 0, 0, 0, 0])
-        matches = matcher.match_boards(detected_boards, camera_pose)
-        
         # Should complete without errors
-        assert isinstance(matches, list)
+        assert isinstance(matcher.match_boards(detected_boards, camera_pose), list)
     
     def test_configuration_validation(self):
         """Test configuration validation."""
         # Valid configuration
         valid_config = CharucoBoardConfig(
-            board_id="test",
             squares_x=5, squares_y=4,
             square_size=0.05, marker_size=0.035,
             dictionary_type=cv2.aruco.DICT_6X6_250,
@@ -285,7 +274,6 @@ class TestIntegration:
         )
         
         # Should create without errors
-        assert valid_config.board_id == "test"
         assert valid_config.squares_x == 5
         assert valid_config.squares_y == 4
         assert len(valid_config.expected_plane) == 6

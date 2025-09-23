@@ -7,7 +7,7 @@ for the KUKA vision correction system to support multiple boards simultaneously.
 
 import cv2
 import numpy as np
-from typing import List, Dict, Optional, Tuple
+from typing import List, Optional
 import logging
 from dataclasses import dataclass
 from scipy.spatial.transform import Rotation as R
@@ -16,7 +16,6 @@ from scipy.spatial.transform import Rotation as R
 @dataclass
 class CharucoBoardConfig:
     """Configuration for a ChArUco board."""
-    board_id: str  # Unique identifier for this board
     squares_x: int  # Number of squares in X direction
     squares_y: int  # Number of squares in Y direction
     square_size: float  # Size of each square in meters
@@ -28,8 +27,11 @@ class CharucoBoardConfig:
 
 @dataclass
 class DetectedCharucoBoard:
-    """Represents a detected ChArUco board with pose information."""
-    board_id: Optional[str]  # Assigned ID after matching, None if unmatched
+    """Observed ChArUco board in the current frame.
+
+    Note: This intentionally does not inherit board configuration to decouple
+    detection outputs from configuration inputs. Identification is by array position.
+    """
     corners: np.ndarray  # Detected ChArUco corners in image coordinates
     ids: np.ndarray  # ChArUco corner IDs
     translation: np.ndarray  # [x, y, z] board pose in camera coordinates (meters)
@@ -66,27 +68,27 @@ class CharucoBoardDetector:
         self.camera_matrix = camera_matrix
         self.distortion_coeffs = distortion_coeffs
         self.min_corners_for_pose = min_corners_for_pose
-        
-        # Create ChArUco boards and detectors for each configuration
-        self.charuco_boards = {}
-        self.charuco_detectors = {}
-        
+
+        # Create ChArUco boards and detectors lists (index-based)
+        self.charuco_boards: List[cv2.aruco.CharucoBoard] = []
+        self.charuco_detectors: List[cv2.aruco.CharucoDetector] = []
+
         for config in board_configs:
             # Create ArUco dictionary
             dictionary = cv2.aruco.getPredefinedDictionary(config.dictionary_type)
-            
+
             # Create ChArUco board
             board = cv2.aruco.CharucoBoard(
                 (config.squares_x, config.squares_y),
                 config.square_size,
                 config.marker_size,
-                dictionary
+                dictionary,
             )
-            
+
             # Create detector with optimized parameters
             detector_params = cv2.aruco.DetectorParameters()
             charuco_params = cv2.aruco.CharucoParameters()
-            
+
             # Optimize for multiple boards
             try:
                 detector_params.adaptiveThreshWinSizeMin = 3
@@ -97,13 +99,15 @@ class CharucoBoardDetector:
             except AttributeError:
                 # Some OpenCV versions may not have these attributes
                 pass
-            
+
             detector = cv2.aruco.CharucoDetector(board, charuco_params, detector_params)
-            
-            self.charuco_boards[config.board_id] = board
-            self.charuco_detectors[config.board_id] = detector
-        
-        self.logger.info(f"Initialized ChArUco detector for {len(board_configs)} boards")
+
+            self.charuco_boards.append(board)
+            self.charuco_detectors.append(detector)
+
+        self.logger.info(
+            f"Initialized ChArUco detector for {len(self.board_configs)} boards"
+        )
     
     def detect_boards(self, image: np.ndarray) -> List[DetectedCharucoBoard]:
         """
@@ -113,7 +117,7 @@ class CharucoBoardDetector:
             image: Input image (BGR or grayscale)
             
         Returns:
-            List of detected boards (without board_id assignment)
+            List of detected boards
         """
         if self.camera_matrix is None or self.distortion_coeffs is None:
             self.logger.error("Camera calibration not loaded")
@@ -128,11 +132,12 @@ class CharucoBoardDetector:
         detected_boards = []
         
         # Try to detect each board type
-        for config in self.board_configs:
-            detector = self.charuco_detectors[config.board_id]
+        for idx, config in enumerate(self.board_configs):
+            detector = self.charuco_detectors[idx]
             
             # Detect ChArUco board
-            charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(gray)
+            det_res = detector.detectBoard(gray)
+            charuco_corners, charuco_ids = det_res[0], det_res[1]
             
             # Check if we have enough corners for pose estimation
             if (charuco_corners is not None and charuco_ids is not None and 
@@ -141,7 +146,7 @@ class CharucoBoardDetector:
                 # Estimate pose
                 success, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
                     charuco_corners, charuco_ids,
-                    self.charuco_boards[config.board_id],
+                    self.charuco_boards[idx],
                     self.camera_matrix, self.distortion_coeffs,
                     None, None
                 )
@@ -155,20 +160,21 @@ class CharucoBoardDetector:
                     confidence = min(1.0, len(charuco_corners) / max_corners * 1.5)
                     
                     detected_board = DetectedCharucoBoard(
-                        board_id=None,  # Will be assigned by matcher
                         corners=charuco_corners,
                         ids=charuco_ids,
                         translation=tvec.flatten(),
                         rotation=rvec.flatten(),
                         rotation_matrix=rotation_matrix,
                         confidence=confidence,
-                        num_corners=len(charuco_corners)
+                        num_corners=len(charuco_corners),
                     )
                     
                     detected_boards.append(detected_board)
                     
-                    self.logger.debug(f"Detected potential {config.board_id} board with "
-                                    f"{len(charuco_corners)} corners, confidence: {confidence:.2f}")
+                    self.logger.debug(
+                        f"Detected potential board_{idx} with {len(charuco_corners)} corners, "
+                        f"confidence: {confidence:.2f}"
+                    )
         
         self.logger.debug(f"Total detected boards: {len(detected_boards)}")
         return detected_boards
@@ -194,17 +200,10 @@ class CharucoBoardDetector:
                 output_image, board.corners, board.ids, (0, 255, 0)
             )
             
-            # Draw board ID if assigned
-            if board.board_id:
-                # Find center of corners
-                center = board.corners.mean(axis=0).astype(int).flatten()
-                cv2.putText(output_image, board.board_id, 
-                           tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            else:
-                # Draw unmatched indicator
-                center = board.corners.mean(axis=0).astype(int).flatten()
-                cv2.putText(output_image, f"Board_{i}", 
-                           tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            # Draw label by index
+            center = board.corners.mean(axis=0).astype(int).flatten()
+            cv2.putText(output_image, f"Board_{i}", 
+                        tuple(center), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             # Draw coordinate axes if camera calibration is available
             if self.camera_matrix is not None and self.distortion_coeffs is not None:

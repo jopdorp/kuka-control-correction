@@ -64,7 +64,6 @@ Defines the ChArUco boards used in the system:
 {
   "boards": [
     {
-      "board_id": "station_1_board",
       "squares_x": 7,                    // Number of squares horizontally
       "squares_y": 5,                    // Number of squares vertically  
       "square_size": 0.04,               // Square size in meters

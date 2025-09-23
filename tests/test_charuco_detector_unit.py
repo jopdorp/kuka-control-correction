@@ -11,17 +11,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi',
 
 scipy_available = True
 try:
-    from scipy.spatial.transform import Rotation as R  # noqa: F401
+    from scipy.spatial.transform import Rotation as R  # type: ignore
 except Exception:
     scipy_available = False
 
 cv2_available = True
 try:
-    import cv2  # noqa: F401
+    import cv2
 except Exception:
     cv2_available = False
 
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
+from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
 
 pytestmark = pytest.mark.skipif(not scipy_available or not cv2_available, reason="SciPy or CV2 not installed")
 
@@ -29,7 +29,6 @@ pytestmark = pytest.mark.skipif(not scipy_available or not cv2_available, reason
 def test_detector_initialization():
     """Test that detector initializes correctly with board configurations."""
     board_config = CharucoBoardConfig(
-        board_id="test_board",
         squares_x=5,
         squares_y=4,
         square_size=0.05,
@@ -48,15 +47,12 @@ def test_detector_initialization():
     )
     
     assert len(detector.charuco_boards) == 1
-    assert "test_board" in detector.charuco_boards
     assert len(detector.charuco_detectors) == 1
-    assert "test_board" in detector.charuco_detectors
 
 
 def test_detector_detect_boards_without_calibration():
     """Test that detector returns empty list without camera calibration."""
     board_config = CharucoBoardConfig(
-        board_id="test_board",
         squares_x=5,
         squares_y=4,
         square_size=0.05,
@@ -89,17 +85,15 @@ def test_detected_charuco_board_structure():
     rotation_matrix = np.eye(3)
     
     board = DetectedCharucoBoard(
-        board_id=None,
         corners=corners,
         ids=ids,
         translation=translation,
         rotation=rotation,
         rotation_matrix=rotation_matrix,
         confidence=0.8,
-        num_corners=10
+        num_corners=10,
     )
     
-    assert board.board_id is None
     assert board.corners.shape == (10, 1, 2)
     assert len(board.ids) == 10
     assert board.translation.shape == (3,)

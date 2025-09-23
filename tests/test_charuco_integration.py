@@ -8,9 +8,9 @@ import cv2
 import numpy as np
 
 # Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'raspberry-pi', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
 
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig
+from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig  # type: ignore
 
 
 def test_charuco_detector():
@@ -19,7 +19,6 @@ def test_charuco_detector():
     
     # Create a simple board configuration
     board_config = CharucoBoardConfig(
-        board_id="test_board",
         squares_x=5,
         squares_y=4,
         square_size=0.05,  # 50mm squares

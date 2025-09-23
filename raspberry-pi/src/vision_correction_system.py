@@ -11,7 +11,6 @@ import json
 import logging
 import time
 import threading
-import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 import socket
@@ -20,7 +19,7 @@ import collections
 
 from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
-from charuco_board_matcher import CharucoBoardMatcher, BoardMatchResult
+from charuco_board_matcher import CharucoBoardMatcher
 from charuco_board_inference import infer_charuco_board_config_from_image
 
 
@@ -28,7 +27,7 @@ from charuco_board_inference import infer_charuco_board_config_from_image
 class SystemConfig:
     """Configuration for the vision correction system."""
     # ChArUco board settings (required)
-    charuco_boards_config_file: str  # Path to ChArUco boards configuration file (required)
+    charuco_boards_config_file: str = 'charuco_boards_config.json'  # Path to ChArUco boards configuration file (required)
     
     # Camera settings
     camera_index: int = 0
@@ -243,49 +242,45 @@ class VisionCorrectionSystem:
             True if successful
         """
         try:
-            # Allow specifying a PNG image path instead of JSON for board config
-            if config_file.lower().endswith('.png'):
-                inferred = infer_charuco_board_config_from_image(config_file)
-                self.charuco_board_configs = [inferred]
-            else:
-                with open(config_file, 'r') as f:
-                    boards_data = json.load(f)
-                
-                # Parse board configurations
-                self.charuco_board_configs = []
-                for board_data in boards_data.get('boards', []):
-                    config = CharucoBoardConfig(
-                        board_id=board_data['board_id'],
-                        squares_x=board_data['squares_x'],
-                        squares_y=board_data['squares_y'],
-                        square_size=board_data['square_size'],
-                        marker_size=board_data['marker_size'],
-                        dictionary_type=board_data.get('dictionary_type', cv2.aruco.DICT_6X6_250),
-                        expected_plane=board_data['expected_plane']
+            self.charuco_board_configs = []
+            with open(config_file, 'r') as f:
+                boards_data = json.load(f)
+
+                board_image = boards_data.get('board_image', 'charuco_board.png')
+                planes = boards_data.get('expected_planes', [])
+                if not planes:
+                    raise ValueError("expected_planes missing or empty in ChArUco config JSON")
+
+                inferred = infer_charuco_board_config_from_image(board_image)
+
+                # Clone per plane; identification is by index
+                for plane in planes:
+                    cfg = CharucoBoardConfig(
+                        squares_x=inferred.squares_x,
+                        squares_y=inferred.squares_y,
+                        square_size=inferred.square_size,
+                        marker_size=inferred.marker_size,
+                        dictionary_type=inferred.dictionary_type,
+                        expected_plane=plane,
                     )
-                    self.charuco_board_configs.append(config)
+                    self.charuco_board_configs.append(cfg)
+        
+            self.charuco_detector = CharucoBoardDetector(
+                board_configs=self.charuco_board_configs,
+                camera_matrix=camera_matrix,
+                distortion_coeffs=distortion_coeffs
+            )
             
-            # Initialize ChArUco detector and matcher
-            if self.charuco_board_configs:
-                self.charuco_detector = CharucoBoardDetector(
-                    board_configs=self.charuco_board_configs,
-                    camera_matrix=camera_matrix,
-                    distortion_coeffs=distortion_coeffs
-                )
-                
-                self.charuco_matcher = CharucoBoardMatcher(
-                    board_configs=self.charuco_board_configs,
-                    max_position_error=self.config.max_board_position_error,
-                    max_rotation_error=self.config.max_board_rotation_error,
-                    position_weight=self.config.board_position_weight,
-                    rotation_weight=self.config.board_rotation_weight
-                )
-                
-                self.logger.info(f"Loaded {len(self.charuco_board_configs)} ChArUco board configurations")
-                return True
-            else:
-                self.logger.error("No valid ChArUco board configurations found")
-                return False
+            self.charuco_matcher = CharucoBoardMatcher(
+                board_configs=self.charuco_board_configs,
+                max_position_error=self.config.max_board_position_error,
+                max_rotation_error=self.config.max_board_rotation_error,
+                position_weight=self.config.board_position_weight,
+                rotation_weight=self.config.board_rotation_weight
+            )
+            
+            self.logger.info(f"Loaded {len(self.charuco_board_configs)} ChArUco board configurations")
+            return True
         
         except Exception as e:
             self.logger.error(f"Failed to load ChArUco boards config: {e}")
@@ -630,9 +625,11 @@ class VisionCorrectionSystem:
         
         # Log successful matches
         for result in matched_results:
-            self.logger.info(f"Matched board {result.matched_config.board_id}: "
-                           f"pos_err={result.position_error:.1f}mm, rot_err={result.rotation_error:.1f}deg, "
-                           f"conf={result.detected_board.confidence:.2f}")
+            self.logger.info(
+                f"Matched board config[{result.config_index}] with detected[{result.detected_index}]: "
+                f"pos_err={result.position_error:.1f}mm, rot_err={result.rotation_error:.1f}deg, "
+                f"conf={result.detected_board.confidence:.2f}"
+            )
         
         # Calculate correction using best matched board
         best_match = matched_results[0]  # Already sorted by error
@@ -701,7 +698,7 @@ class VisionCorrectionSystem:
         )
     
     def _calculate_charuco_correction(self, 
-                                    match_result: BoardMatchResult,
+                                    match_result,
                                     current_camera_pose: np.ndarray) -> Optional[CorrectionData]:
         """
         Calculate position correction using ChArUco board match.
@@ -851,8 +848,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
     
     # Load configuration - ChArUco boards config is required
-    config = SystemConfig()
-    config.charuco_boards_config_file = 'charuco_boards_config.json'
+    config = SystemConfig(charuco_boards_config_file='charuco_boards_config.json')
     
     # Create and start system
     system = VisionCorrectionSystem(config)

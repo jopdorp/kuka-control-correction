@@ -138,7 +138,6 @@ Define boards in `charuco_boards_config.json`:
 {
   "boards": [
     {
-      "board_id": "station_1_board",
       "squares_x": 7,
       "squares_y": 5,
       "square_size": 0.04,

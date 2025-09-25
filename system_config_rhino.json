@@ -1,0 +1,37 @@
+{
+  "files": {
+    "charuco_boards_config": "charuco_boards_config.json"
+  },
+  "camera": {
+    "source_type": "tcp_stream",
+    "resolution": [1920, 1080],
+    "fps": 20,
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "robot": {
+    "model": "KR250_R2700-2"
+  },
+  "communication": {
+    "controller_ip": "127.0.0.1",
+    "controller_port": 7001,
+    "timeout": 1.0
+  },
+  "vision_correction": {
+    "position_threshold": 0.1,
+    "rotation_threshold": 0.01,
+    "confidence_threshold": 0.8,
+    "max_correction": 5.0
+  },
+  "board_matching": {
+    "max_position_error": 50.0,
+    "max_rotation_error": 30.0,
+    "position_weight": 1.0,
+    "rotation_weight": 0.1
+  },
+  "processing": {
+    "rate": 20.0,
+    "buffer_size": 200,
+    "max_time_skew": 0.1
+  }
+}

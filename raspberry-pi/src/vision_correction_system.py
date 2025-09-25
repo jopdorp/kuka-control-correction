@@ -21,6 +21,7 @@ from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuk
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
 from charuco_board_matcher import CharucoBoardMatcher
 from charuco_board_inference import infer_charuco_board_config_from_image
+from camera_sources import CameraSource, CameraConfig, create_camera_source
 
 
 @dataclass
@@ -30,9 +31,14 @@ class SystemConfig:
     charuco_boards_config_file: str = 'charuco_boards_config.json'  # Path to ChArUco boards configuration file (required)
     
     # Camera settings
-    camera_index: int = 0
+    camera_source_type: str = 'physical'  # 'physical' or 'tcp_stream'
+    camera_index: int = 0                 # For physical cameras
     camera_resolution: tuple = (1920, 1080)
     camera_fps: int = 30
+    
+    # Network camera settings (for tcp_stream source)
+    camera_host: str = "127.0.0.1"
+    camera_port: int = 8080
     
     # Robot settings
     robot_model: str = "KR250_R2700-2"
@@ -81,9 +87,12 @@ class SystemConfig:
         
         # Update camera settings
         camera_config = config_data.get('camera', {})
+        config.camera_source_type = camera_config.get('source_type', config.camera_source_type)
         config.camera_index = camera_config.get('index', config.camera_index)
         config.camera_resolution = tuple(camera_config.get('resolution', config.camera_resolution))
         config.camera_fps = camera_config.get('fps', config.camera_fps)
+        config.camera_host = camera_config.get('host', config.camera_host)
+        config.camera_port = camera_config.get('port', config.camera_port)
         
         # Update robot settings
         robot_config = config_data.get('robot', {})
@@ -152,8 +161,7 @@ class VisionCorrectionSystem:
         self.T_tool_cam = np.eye(4)
 
         # Camera setup
-        self.camera = None
-        self.camera_running = False
+        self.camera_source = None
 
         # Communication
         self.tcp_socket = None  # TCP client to controller helper
@@ -165,8 +173,6 @@ class VisionCorrectionSystem:
 
         # Processing
         self.processing_running = False
-        self.current_frame = None
-        self.frame_lock = threading.Lock()
         self.camera_pose_buffer = collections.deque(maxlen=self.config.buffer_size)
 
         # State tracking
@@ -328,66 +334,45 @@ class VisionCorrectionSystem:
         self.logger.info("Vision correction system stopped")
     
     def _start_camera(self) -> bool:
-        """Start camera capture."""
+        """Start camera source."""
         try:
-            self.camera = cv2.VideoCapture(self.config.camera_index)
+            # Create camera configuration
+            camera_config = CameraConfig(
+                resolution=self.config.camera_resolution,
+                fps=self.config.camera_fps,
+                device_index=self.config.camera_index,
+                host=self.config.camera_host,
+                port=self.config.camera_port
+            )
             
-            if not self.camera.isOpened():
-                self.logger.error("Failed to open camera")
+            # Create camera source based on configuration
+            self.camera_source = create_camera_source(
+                self.config.camera_source_type, 
+                camera_config
+            )
+            
+            if not self.camera_source.start():
+                self.logger.error(f"Failed to start {self.config.camera_source_type} camera source")
                 return False
             
-            # Set MJPG format for better frame rates
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            self.camera.set(cv2.CAP_PROP_FOURCC, fourcc)
-            
-            # Set camera properties
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera_resolution[0])
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera_resolution[1])
-            self.camera.set(cv2.CAP_PROP_FPS, self.config.camera_fps)
-            
-            # Log actual camera settings
-            actual_width = self.camera.get(cv2.CAP_PROP_FRAME_WIDTH)
-            actual_height = self.camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            actual_fps = self.camera.get(cv2.CAP_PROP_FPS)
-            actual_fourcc = self.camera.get(cv2.CAP_PROP_FOURCC)
-            
-            self.logger.info(f"Camera settings - Resolution: {actual_width}x{actual_height}, FPS: {actual_fps}")
-            self.logger.info(f"Camera fourcc: {''.join([chr(int(actual_fourcc) >> 8 * i & 0xFF) for i in range(4)])}")
-            
-            self.camera_running = True
-            self.camera_thread = threading.Thread(target=self._camera_loop)
-            self.camera_thread.start()
-            
-            self.logger.info("Camera started successfully")
+            self.logger.info(f"Started {self.config.camera_source_type} camera source successfully")
             return True
             
         except Exception as e:
-            self.logger.error(f"Failed to start camera: {e}")
+            self.logger.error(f"Failed to initialize camera source: {e}")
             return False
     
     def _stop_camera(self):
-        """Stop camera capture."""
-        self.camera_running = False
-        
-        if hasattr(self, 'camera_thread'):
-            self.camera_thread.join()
-        
-        if self.camera:
-            self.camera.release()
-            self.camera = None
+        """Stop camera source."""
+        if self.camera_source:
+            self.camera_source.stop()
+            self.camera_source = None
     
-    def _camera_loop(self):
-        """Camera capture loop."""
-        while self.camera_running:
-            ret, frame = self.camera.read()
-            
-            if ret:
-                with self.frame_lock:
-                    self.current_frame = frame.copy()
-            else:
-                self.logger.warning("Failed to capture frame")
-            
-            time.sleep(1.0 / self.config.camera_fps)
+    def get_current_frame(self) -> Optional[np.ndarray]:
+        """Get the current frame from camera source."""
+        if self.camera_source:
+            return self.camera_source.get_frame()
+        return None
     
     def _start_communication(self) -> bool:
         """Start TCP communication to controller."""
@@ -575,12 +560,11 @@ class VisionCorrectionSystem:
     
     def _process_current_frame(self) -> Optional[CorrectionData]:
         """Process current frame for continuous correction without move commands."""
-        with self.frame_lock:
-            if self.current_frame is None:
-                return None
-            frame = self.current_frame.copy()
-            frame_ts = time.time()
-        
+        frame = self.get_current_frame()
+        if frame is None:
+            return None
+            
+        frame_ts = time.time()
         return self._process_charuco_boards(frame, frame_ts)
     
     def _process_charuco_boards(self, frame: np.ndarray, frame_ts: float) -> Optional[CorrectionData]:
@@ -829,10 +813,9 @@ class VisionCorrectionSystem:
     
     def get_current_frame_with_markers(self) -> Optional[np.ndarray]:
         """Get current frame with detected ChArUco boards drawn."""
-        with self.frame_lock:
-            if self.current_frame is None:
-                return None
-            frame = self.current_frame.copy()
+        frame = self.get_current_frame()
+        if frame is None:
+            return None
         
         # Detect and draw ChArUco boards
         if self.charuco_detector:

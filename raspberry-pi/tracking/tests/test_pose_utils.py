@@ -1,16 +1,11 @@
 """
 Tests for pose utilities and coordinate transformations.
 """
-import os
-import sys
 import pytest
 import numpy as np
 
-# Add correction directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
-
 # Import the module under test
-from pose_utils import (
+from correction.pose_utils import (
     RobotPose, MoveCommand,
     pose_to_T, invert_T,
     rotation_matrix_to_kuka_abc, kuka_abc_to_rotation_matrix

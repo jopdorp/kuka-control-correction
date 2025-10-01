@@ -12,11 +12,11 @@ import numpy as np
 import time
 from scipy.spatial.transform import Rotation as R
 
-# Add correction to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
+# Add the parent directory to sys.path to allow imports from correction package
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig
-from charuco_board_inference import infer_charuco_board_config_from_image
+from correction.charuco_board_detector import CharucoBoardDetector
+from correction.charuco_board_inference import infer_charuco_board_config_from_image
 
 
 def main():

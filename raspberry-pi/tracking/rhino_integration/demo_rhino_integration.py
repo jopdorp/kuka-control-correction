@@ -5,12 +5,9 @@ Rhino3D TCP Streaming Integration Demo
 This script demonstrates how to integrate Rhino3D viewport streaming
 with the KUKA vision correction system using TCP streaming.
 """
-
-import json
 import time
 import socket
 import threading
-from typing import Optional
 
 
 class DemoTCPServer:

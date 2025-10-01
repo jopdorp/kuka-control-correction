@@ -17,11 +17,11 @@ import socket
 from queue import Queue, Empty
 import collections
 
-from pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
-from charuco_board_matcher import CharucoBoardMatcher
-from charuco_board_inference import infer_charuco_board_config_from_image
-from camera_sources import CameraSource, CameraConfig, create_camera_source
+from .pose_utils import MoveCommand, RobotPose, pose_to_T, rotation_matrix_to_kuka_abc
+from .charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard
+from .charuco_board_matcher import CharucoBoardMatcher
+from .charuco_board_inference import infer_charuco_board_config_from_image
+from .camera_sources import CameraSource, CameraConfig, create_camera_source
 
 
 @dataclass

@@ -10,8 +10,8 @@ import logging
 from dataclasses import dataclass
 from scipy.optimize import linear_sum_assignment
 
-from charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard
-from pose_utils import pose_to_T
+from .charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard
+from .pose_utils import pose_to_T
 
 
 @dataclass

@@ -2,16 +2,11 @@
 Unit tests for ChArUco board-based vision correction system functionality.
 Tests the integration between ChArUco detection, board matching, and correction calculation.
 """
-import os
-import sys
 import time
 import numpy as np
 
-# Ensure correction is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
-
-from vision_correction_system import VisionCorrectionSystem, SystemConfig  # type: ignore
-from charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
+from correction.vision_correction_system import VisionCorrectionSystem, SystemConfig
+from correction.charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard
 
 
 def make_controller_state(ts: float, x_mm: float) -> dict:

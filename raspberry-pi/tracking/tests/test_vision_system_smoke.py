@@ -2,15 +2,10 @@
 Lightweight smoke tests for VisionCorrectionSystem that avoid starting threads.
 Tests basic functionality of the ChArUco-based vision correction system.
 """
-import os
-import sys
 import time
 import numpy as np
 
-# Ensure correction is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
-
-from vision_correction_system import VisionCorrectionSystem, SystemConfig, CorrectionData
+from correction.vision_correction_system import VisionCorrectionSystem, SystemConfig, CorrectionData
 
 
 def test_system_construction():

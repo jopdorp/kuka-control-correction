@@ -1,13 +1,8 @@
 """
 Unit tests for CharucoBoardDetector with minimal mocking. Skips if SciPy is not available.
 """
-import os
-import sys
 import numpy as np
 import pytest
-
-# Ensure correction is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 scipy_available = True
 try:
@@ -21,7 +16,7 @@ try:
 except Exception:
     cv2_available = False
 
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
+from correction.charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
 
 pytestmark = pytest.mark.skipif(not scipy_available or not cv2_available, reason="SciPy or CV2 not installed")
 

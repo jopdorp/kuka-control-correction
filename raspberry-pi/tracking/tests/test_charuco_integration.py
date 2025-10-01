@@ -2,15 +2,10 @@
 """
 Simple integration test for CharucoDetector to verify the migration from ArucoDetector.
 """
-import sys
-import os
 import cv2
 import numpy as np
 
-# Add correction to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
-
-from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig  # type: ignore
+from correction.charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig  # type: ignore
 
 
 def test_charuco_detector():

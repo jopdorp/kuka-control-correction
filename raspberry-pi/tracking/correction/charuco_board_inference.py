@@ -7,7 +7,7 @@ candidate grids. Square size defaults to 40mm and marker size ratio to 0.7.
 """
 import os
 import cv2
-from charuco_board_detector import CharucoBoardConfig
+from .charuco_board_detector import CharucoBoardConfig
 
 
 def infer_charuco_board_config_from_image(image_path: str) -> CharucoBoardConfig:

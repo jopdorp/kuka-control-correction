@@ -1,15 +1,10 @@
 """
 Extra roundtrip tests for pose_utils.
 """
-import os
-import sys
 import numpy as np
 import pytest
 
-# Ensure correction is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
-
-from pose_utils import pose_to_T, invert_T, kuka_abc_to_rotation_matrix, rotation_matrix_to_kuka_abc
+from correction.pose_utils import pose_to_T, invert_T, kuka_abc_to_rotation_matrix, rotation_matrix_to_kuka_abc
 
 
 @pytest.mark.parametrize("translation", [

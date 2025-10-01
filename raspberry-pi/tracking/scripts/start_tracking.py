@@ -8,15 +8,14 @@ All configuration is loaded from JSON files, no hardcoded values.
 
 import sys
 import os
-import json
 import logging
 import time
 import argparse
 
-# Add correction to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
+# Add the parent directory to sys.path to allow imports from correction package
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from vision_correction_system import VisionCorrectionSystem, SystemConfig
+from correction.vision_correction_system import VisionCorrectionSystem, SystemConfig
 
 
 def validate_config_files(config_file: str, system_config: SystemConfig) -> bool:

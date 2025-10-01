@@ -6,11 +6,6 @@ import pytest
 import numpy as np
 import cv2
 from unittest.mock import Mock, MagicMock
-import sys
-import os
-
-# Add correction directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 @pytest.fixture
 def mock_camera():

@@ -177,10 +177,10 @@ class KukaFileUploadService:
             Dict with success status and details
         """
         try:
-            # Build smbclient command
+            # Build smbclient command - use IP address instead of hostname
             smb_command = [
                 'smbclient',
-                f'//{self.kuka_ip}/PROGRAM',
+                f'//192.168.14.70/PROGRAM',
                 '-U', '%kuka',  # Anonymous login with username 'kuka'
                 '--option=client min protocol=NT1',
                 '--option=client max protocol=NT1',
@@ -234,10 +234,10 @@ class KukaFileUploadService:
     def _test_kuka_connection(self) -> Dict[str, Any]:
         """Test connection to KUKA controller SMB share."""
         try:
-            # Test with simple directory listing
+            # Test with simple directory listing - use IP address instead of hostname
             smb_command = [
                 'smbclient',
-                f'//{self.kuka_ip}/PROGRAM',
+                f'//192.168.14.70/PROGRAM',
                 '-U', '%kuka',
                 '--option=client min protocol=NT1',
                 '--option=client max protocol=NT1', 

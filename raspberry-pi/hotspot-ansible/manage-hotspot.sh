@@ -1,8 +1,6 @@
 #!/bin/bash
-"""
-WiFi Hotspot Ansible Management Script
-Handles encrypted secrets and playbook execution
-"""
+# WiFi Hotspot Ansible Management Script
+# Handles encrypted secrets and playbook execution
 
 set -e
 

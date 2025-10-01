@@ -13,12 +13,81 @@
     hotspot_dhcp_range_start: "{{ network.dhcp_range_start }}"
     hotspot_dhcp_range_end: "{{ network.dhcp_range_end }}"
     hotspot_channel: "{{ network.channel }}"
+    # Wired network (eth0) configuration for Pi
+    pi_eth_interface: "eth0"
+    pi_eth_ip: "192.168.14.11"
+    pi_eth_prefix: "24"
+    # Optional gateway on wired network (set to e.g. 192.168.14.1 if present). If undefined, no default route will be set via eth0.
+    pi_eth_gateway: ""
+    # Robot controller hostname mapping
+    krcpc_ip: "192.168.14.70"
 
   tasks:
     - name: Update apt cache
       apt:
         update_cache: yes
         cache_valid_time: 3600
+    - name: Gather service facts
+      service_facts:
+
+    - name: Ensure krcpc is present in /etc/hosts on the Pi
+      lineinfile:
+        path: /etc/hosts
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+        regexp: '^\s*{{ krcpc_ip | regex_escape() }}\s+krcpc(\s|$)'
+        line: "{{ krcpc_ip }} krcpc"
+
+    - name: Configure eth0 static IP via NetworkManager (if available)
+      block:
+        - name: Ensure eth0-static connection exists
+          shell: |
+            nmcli -t -f NAME c show | grep -qx "eth0-static" || \
+            nmcli connection add type ethernet ifname {{ pi_eth_interface }} con-name eth0-static
+
+        - name: Apply IPv4 settings to eth0-static
+          shell: |
+            nmcli connection modify eth0-static \
+              ipv4.addresses {{ pi_eth_ip }}/{{ pi_eth_prefix }} \
+              ipv4.method manual \
+              ipv4.dns "8.8.8.8 1.1.1.1" \
+              connection.autoconnect yes \
+              ipv4.route-metric 100
+
+        - name: Configure eth0 gateway and default route preference (if provided)
+          shell: |
+            if [ -n "{{ pi_eth_gateway }}" ]; then
+              nmcli connection modify eth0-static ipv4.gateway {{ pi_eth_gateway }} ipv4.never-default no
+            else
+              nmcli connection modify eth0-static ipv4.gateway "" ipv4.never-default yes
+            fi
+
+        - name: Bring up eth0-static connection
+          shell: nmcli connection up eth0-static || nmcli connection reload && nmcli connection up eth0-static
+      when: "'NetworkManager.service' in ansible_facts.services"
+
+    - name: Configure eth0 static IP without NetworkManager (fallback)
+      block:
+        - name: Ensure eth0 is up
+          shell: ip link set {{ pi_eth_interface }} up
+        - name: Assign static IP to eth0
+          shell: |
+            ip addr flush dev {{ pi_eth_interface }}
+            ip addr add {{ pi_eth_ip }}/{{ pi_eth_prefix }} dev {{ pi_eth_interface }}
+        - name: Set default route via eth0 when gateway provided
+          shell: |
+            if [ -n "{{ pi_eth_gateway }}" ]; then
+              ip route replace default via {{ pi_eth_gateway }} dev {{ pi_eth_interface }} metric 100 || true
+            fi
+      when: "'NetworkManager.service' not in ansible_facts.services"
+
+    - name: De-prefer Wi-Fi default route if present (ensure eth0 preferred)
+      shell: |
+        if ip route | grep -q "^default .* dev {{ hotspot_interface }}"; then
+          ip route del default dev {{ hotspot_interface }} || true
+        fi
 
     - name: Install required packages for hotspot
       apt:

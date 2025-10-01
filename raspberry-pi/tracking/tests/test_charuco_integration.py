@@ -7,8 +7,8 @@ import os
 import cv2
 import numpy as np
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
+# Add correction to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig  # type: ignore
 

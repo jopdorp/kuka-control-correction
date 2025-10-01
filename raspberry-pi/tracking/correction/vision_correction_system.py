@@ -162,6 +162,7 @@ class VisionCorrectionSystem:
 
         # Camera setup
         self.camera_source = None
+        self.camera_running = False
 
         # Communication
         self.tcp_socket = None  # TCP client to controller helper

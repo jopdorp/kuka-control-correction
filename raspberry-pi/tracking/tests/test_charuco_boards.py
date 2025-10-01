@@ -8,8 +8,8 @@ import cv2
 import sys
 import os
 
-# Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
+# Add correction directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig, DetectedCharucoBoard  # type: ignore
 from charuco_board_matcher import CharucoBoardMatcher  # type: ignore

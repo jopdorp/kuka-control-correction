@@ -1,9 +1,13 @@
 """
 Tests for pose utilities and coordinate transformations.
 """
-
+import os
+import sys
 import pytest
 import numpy as np
+
+# Add correction directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 # Import the module under test
 from pose_utils import (

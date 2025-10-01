@@ -7,8 +7,8 @@ import sys
 import time
 import numpy as np
 
-# Ensure src is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
+# Ensure correction is on path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from vision_correction_system import VisionCorrectionSystem, SystemConfig, CorrectionData
 
@@ -19,7 +19,7 @@ def test_system_construction():
     
     system = VisionCorrectionSystem(cfg)
     assert system.config is cfg
-    assert system.camera is None
+    assert system.camera_source is None
     assert system.tcp_socket is None
     assert system.processing_running is False
     assert system.communication_running is False

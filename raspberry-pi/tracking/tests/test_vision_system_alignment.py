@@ -7,8 +7,8 @@ import sys
 import time
 import numpy as np
 
-# Ensure src is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
+# Ensure correction is on path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from vision_correction_system import VisionCorrectionSystem, SystemConfig  # type: ignore
 from charuco_board_detector import CharucoBoardConfig, DetectedCharucoBoard  # type: ignore

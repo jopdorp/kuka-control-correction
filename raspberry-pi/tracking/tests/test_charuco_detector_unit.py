@@ -6,8 +6,8 @@ import sys
 import numpy as np
 import pytest
 
-# Ensure src is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'raspberry-pi', 'src'))
+# Ensure correction is on path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 scipy_available = True
 try:

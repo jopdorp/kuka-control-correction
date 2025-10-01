@@ -12,8 +12,8 @@ import numpy as np
 import time
 from scipy.spatial.transform import Rotation as R
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'raspberry-pi', 'src'))
+# Add correction to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from charuco_board_detector import CharucoBoardDetector, CharucoBoardConfig
 from charuco_board_inference import infer_charuco_board_config_from_image
@@ -24,7 +24,7 @@ def main():
     print("Press 'q' to quit, 's' to save current frame")
 
     # Derive a single board configuration from the repo image
-    board_image = os.path.join(os.path.dirname(__file__), 'charuco_board.png')
+    board_image = os.path.join(os.path.dirname(__file__), '..', 'config', 'charuco_board.png')
     board_config = infer_charuco_board_config_from_image(board_image)
     print(f"Inferred ChArUco grid from image {os.path.basename(board_image)}: "
           f"{board_config.squares_x}x{board_config.squares_y}")
@@ -48,7 +48,7 @@ def main():
     cap.set(cv2.CAP_PROP_FPS, 30)
     
     # Load camera calibration (required; no fallbacks)
-    calibration_file = "camera_calibration.npz"
+    calibration_file = os.path.join(os.path.dirname(__file__), '..', 'config', 'camera_calibration.npz')
     if os.path.exists(calibration_file):
         print(f"Loading camera calibration from {calibration_file}...")
         try:

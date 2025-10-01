@@ -4,6 +4,7 @@ Simple camera calibration using ChArUco board.
 Just finds the camera matrix and distortion coefficients.
 """
 
+import os
 import cv2
 import numpy as np
 from PIL import Image
@@ -49,10 +50,14 @@ def main():
     board_image = charuco.generateImage((width_pixels, height_pixels))
     
     # Save with DPI metadata using PIL
-    pil_image = Image.fromarray(board_image)
-    pil_image.save("charuco_board.png", dpi=(dpi, dpi))
+    config_dir = os.path.join(os.path.dirname(__file__), '..', 'config')
+    os.makedirs(config_dir, exist_ok=True)
+    board_path = os.path.join(config_dir, "charuco_board.png")
     
-    print("Saved charuco_board.png - print this at 600 DPI for correct size!")
+    pil_image = Image.fromarray(board_image)
+    pil_image.save(board_path, dpi=(dpi, dpi))
+    
+    print(f"Saved {board_path} - print this at 600 DPI for correct size!")
     print(f"When printing, ensure your printer is set to 600 DPI and 'Actual Size' (100% scale)")
     
     input("Print the board and press Enter to start calibration...")
@@ -151,12 +156,13 @@ def main():
                 
                 # Save results (also include calibration image size for later scaling)
                 calib_img_size = np.array(gray.shape[::-1], dtype=np.int32)  # (width, height)
-                np.savez('camera_calibration.npz', 
+                calibration_path = os.path.join(config_dir, 'camera_calibration.npz')
+                np.savez(calibration_path, 
                          camera_matrix=camera_matrix, 
                          distortion_coeffs=dist_coeffs,
                          calibration_error=ret,
                          image_size=calib_img_size)
-                print("Saved to camera_calibration.npz (with image_size)")
+                print(f"Saved to {calibration_path} (with image_size)")
                 break
             else:
                 print(f"Need more images. Have {len(all_corners)}, need at least 10")

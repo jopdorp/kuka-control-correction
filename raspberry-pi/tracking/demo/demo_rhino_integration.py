@@ -166,7 +166,7 @@ Update your system config to use TCP streaming:
 }
 ```
 
-Then run: `python3 raspberry-pi/src/vision_correction_system.py system_config_rhino.json`
+Then run: `python3 raspberry-pi/tracking/correction/vision_correction_system.py system_config_rhino.json`
 
 ## Performance Notes
 - TCP streaming provides best performance (~20-30 FPS)
@@ -202,7 +202,7 @@ def main():
     print("\nDemo completed!")
     print("Next steps:")
     print("1. Follow rhino_tcp_setup.md for complete setup")
-    print("2. Test with: python3 raspberry-pi/src/vision_correction_system.py system_config_rhino.json")
+    print("2. Test with: python3 raspberry-pi/tracking/correction/vision_correction_system.py system_config_rhino.json")
 
 
 if __name__ == "__main__":

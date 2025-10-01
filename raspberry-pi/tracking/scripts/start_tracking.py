@@ -13,8 +13,8 @@ import logging
 import time
 import argparse
 
-# Add raspberry-pi/src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'raspberry-pi', 'src'))
+# Add correction to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'correction'))
 
 from vision_correction_system import VisionCorrectionSystem, SystemConfig
 
@@ -74,8 +74,8 @@ Examples:
     
     parser.add_argument(
         '--config', '-c',
-        default='system_config.json',
-        help='Path to system configuration file (default: system_config.json)'
+        default=os.path.join(os.path.dirname(__file__), '..', 'config', 'system_config.json'),
+        help='Path to system configuration file (default: config/system_config.json)'
     )
     
     parser.add_argument(

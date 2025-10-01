@@ -5,3 +5,7 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    extra_hosts:
+      - "krcpc:192.168.14.70"
+    environment:
+      - KUKA_IP=192.168.14.70

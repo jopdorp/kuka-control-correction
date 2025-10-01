@@ -177,10 +177,10 @@ class KukaFileUploadService:
             Dict with success status and details
         """
         try:
-            # Build smbclient command - use IP address instead of hostname
+            # Build smbclient command - use hostname (resolved via extra_hosts in docker-compose)
             smb_command = [
                 'smbclient',
-                f'//192.168.14.70/PROGRAM',
+                f'//krcpc/PROGRAM',
                 '-U', '%kuka',  # Anonymous login with username 'kuka'
                 '--option=client min protocol=NT1',
                 '--option=client max protocol=NT1',
@@ -234,10 +234,10 @@ class KukaFileUploadService:
     def _test_kuka_connection(self) -> Dict[str, Any]:
         """Test connection to KUKA controller SMB share."""
         try:
-            # Test with simple directory listing - use IP address instead of hostname
+            # Test with simple directory listing - use hostname (resolved via extra_hosts in docker-compose)
             smb_command = [
                 'smbclient',
-                f'//192.168.14.70/PROGRAM',
+                f'//krcpc/PROGRAM',
                 '-U', '%kuka',
                 '--option=client min protocol=NT1',
                 '--option=client max protocol=NT1', 

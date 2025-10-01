@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KUKA File Upload Service</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 KUKA File Upload</h1>
+            <p>Drag and drop files to upload to KUKA controller</p>
+        </div>
+        
+        <div class="content">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📁</div>
+                <div class="upload-text">Click here or drag files to upload</div>
+                <div class="upload-hint">Supported: .src, .dat, .sub, .krl, .xml, .txt, .cfg, .ini (max 10MB)</div>
+            </div>
+            
+            <input type="file" id="fileInput" class="file-input" multiple accept=".src,.dat,.sub,.krl,.xml,.txt,.cfg,.ini">
+            
+            <div class="text-center">
+                <button class="btn" onclick="testConnection()">🔗 Test Connection</button>
+                <button class="btn secondary" onclick="showStatus()">📊 View Status</button>
+            </div>
+            
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            
+            <div class="status-area" id="statusArea"></div>
+            
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>Connection Info</h3>
+                    <p><strong>KUKA IP:</strong> {{ kuka_ip }}</p>
+                    <p><strong>SMB Share:</strong> //{{ kuka_ip }}/PROGRAM</p>
+                    <p><strong>Status:</strong> <span class="connection-status status-unknown" id="connectionStatus">Unknown</span></p>
+                </div>
+                
+                <div class="info-card">
+                    <h3>Upload Guidelines</h3>
+                    <p>• Upload KRL programs (.src) and data files (.dat)</p>
+                    <p>• Files are transferred directly to KUKA PROGRAM folder</p>
+                    <p>• Ensure KUKA controller is powered and network accessible</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='upload.js') }}"></script>
+</body>
+</html>

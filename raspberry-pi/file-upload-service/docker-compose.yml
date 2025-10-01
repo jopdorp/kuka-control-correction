@@ -1,0 +1,7 @@
+services:
+  kuka-file-upload:
+    build: .
+    container_name: kuka-file-upload
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

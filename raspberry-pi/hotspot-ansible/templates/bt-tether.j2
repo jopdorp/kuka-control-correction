@@ -1,0 +1,174 @@
+#!/bin/bash
+
+# Zero-Config Bluetooth Tethering Daemon
+# Automatically discovers and connects to devices offering Bluetooth internet sharing
+
+LOGFILE="/var/log/bt-tether-auto.log"
+PIDFILE="/var/run/bt-tether.pid"
+SCAN_INTERVAL=10
+CONNECT_TIMEOUT=30
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): $1" | tee -a "$LOGFILE"
+}
+
+cleanup() {
+    log "Cleaning up Bluetooth tethering connections..."
+    # Disconnect any active PAN connections
+    for dev in $(bluetoothctl devices | grep -o "[A-F0-9:]\{17\}"); do
+        bluetoothctl disconnect "$dev" >/dev/null 2>&1
+    done
+    # Remove the PID file
+    [ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+    exit 0
+}
+
+scan_and_connect() {
+    log "Starting device scan for PAN-capable devices..."
+    
+    # Enable discoverable and pairable mode
+    bluetoothctl discoverable on >/dev/null 2>&1
+    bluetoothctl pairable on >/dev/null 2>&1
+    
+    # Start scanning
+    bluetoothctl scan on >/dev/null 2>&1 &
+    SCAN_PID=$!
+    
+    sleep 5
+    
+    # Get list of discovered devices
+    mapfile -t devices < <(bluetoothctl devices | grep -o "[A-F0-9:]\{17\}")
+    
+    # Stop scanning
+    kill $SCAN_PID 2>/dev/null
+    bluetoothctl scan off >/dev/null 2>&1
+    
+    for device in "${devices[@]}"; do
+        if [ -z "$device" ]; then continue; fi
+        
+        log "Attempting to connect to device: $device"
+        
+        # Try to pair and trust the device
+        echo -e "pair $device\ntrust $device\nconnect $device\nquit" | timeout $CONNECT_TIMEOUT bluetoothctl
+        
+        # Check if we have an internet connection through this device
+        sleep 3
+        if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+            log "✅ Successfully connected to $device with internet access!"
+            return 0
+        else
+            log "❌ Connected to $device but no internet access, disconnecting..."
+            bluetoothctl disconnect "$device" >/dev/null 2>&1
+        fi
+        
+        sleep 2
+    done
+    
+    log "No suitable devices found or connected"
+    return 1
+}
+
+daemon_mode() {
+    log "🚀 Starting Zero-Config Bluetooth Tethering Daemon"
+    echo $$ > "$PIDFILE"
+    
+    # Set up signal handlers
+    trap cleanup SIGTERM SIGINT
+    
+    while true; do
+        # Check if we already have internet
+        if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+            log "✅ Internet connection active, sleeping..."
+            sleep $SCAN_INTERVAL
+            continue
+        fi
+        
+        log "🔍 No internet connection, scanning for tethering devices..."
+        
+        # Attempt to find and connect to a tethering device
+        if ! scan_and_connect; then
+            log "⏰ No devices found, waiting ${SCAN_INTERVAL}s before retry..."
+            sleep $SCAN_INTERVAL
+        else
+            # Connected successfully, check periodically
+            sleep $((SCAN_INTERVAL * 3))
+        fi
+    done
+}
+
+show_status() {
+    echo "=== Bluetooth Tethering Daemon Status ==="
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "Status: RUNNING (PID: $(cat "$PIDFILE"))"
+    else
+        echo "Status: STOPPED"
+    fi
+    
+    echo ""
+    echo "=== Active Bluetooth Connections ==="
+    bluetoothctl devices Connected 2>/dev/null || echo "No connected devices"
+    
+    echo ""
+    echo "=== Internet Connectivity ==="
+    if ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        echo "✅ Internet: AVAILABLE"
+    else
+        echo "❌ Internet: NOT AVAILABLE"
+    fi
+    
+    echo ""
+    echo "=== Recent Log Entries ==="
+    if [ -f "$LOGFILE" ]; then
+        tail -10 "$LOGFILE"
+    else
+        echo "No log file found"
+    fi
+}
+
+manual_scan() {
+    log "🔍 Manual scan requested"
+    if scan_and_connect; then
+        log "✅ Manual connection attempt completed successfully"
+    else
+        log "❌ Manual connection attempt failed"
+    fi
+}
+
+stop_daemon() {
+    if [ -f "$PIDFILE" ]; then
+        local pid=$(cat "$PIDFILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            log "Stopping daemon (PID: $pid)"
+            kill -TERM "$pid"
+            sleep 2
+            if kill -0 "$pid" 2>/dev/null; then
+                log "Force killing daemon"
+                kill -KILL "$pid"
+            fi
+        fi
+        rm -f "$PIDFILE"
+    fi
+    cleanup
+}
+
+case "${1:-daemon}" in
+    daemon)
+        daemon_mode
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    status)
+        show_status
+        ;;
+    scan)
+        manual_scan
+        ;;
+    *)
+        echo "Usage: $0 [daemon|stop|status|scan]"
+        echo "  daemon - Run continuous auto-tethering (default)"
+        echo "  stop   - Stop the daemon and cleanup"
+        echo "  status - Show current status"
+        echo "  scan   - Manual scan and connect attempt"
+        ;;
+esac

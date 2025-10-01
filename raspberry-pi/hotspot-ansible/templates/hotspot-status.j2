@@ -1,0 +1,15 @@
+#!/bin/bash
+echo "=== Hotspot Status ==="
+echo "Hostapd: $(systemctl is-active hostapd)"
+echo "Dnsmasq: $(systemctl is-active dnsmasq)"
+echo "KUKA Hotspot Service: $(systemctl is-active kuka-hotspot)"
+echo
+echo "=== Network Info ==="
+ip addr show {{ hotspot_interface }} | grep -E "(inet |state)"
+echo
+echo "=== Connected Clients ==="
+if [ -f /var/lib/dhcp/dhcpd.leases ]; then
+    cat /var/lib/dhcp/dhcpd.leases | grep "lease\|client-hostname\|binding state active" | tail -10
+else
+    echo "No DHCP leases file found"
+fi

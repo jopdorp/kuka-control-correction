@@ -35,6 +35,10 @@ print_usage() {
     echo "  setup-hotspot    - Run the hotspot setup playbook"
     echo "  test-connection  - Test connectivity to the Pi"
     echo "  status           - Check hotspot services status"
+    echo "  bt-start         - Start Bluetooth tethering (on Pi)"
+    echo "  bt-stop          - Stop Bluetooth tethering (on Pi)" 
+    echo "  bt-status        - Check Bluetooth tethering status (on Pi)"
+    echo "  bt-logs          - View Bluetooth tethering logs (on Pi)"
     echo "  help             - Show this help message"
     echo
     echo "Examples:"
@@ -152,11 +156,43 @@ check_status() {
     ansible raspberry_pi -i "$INVENTORY_FILE" -m shell -a "
         echo 'Hostapd:' && systemctl is-active hostapd
         echo 'Dnsmasq:' && systemctl is-active dnsmasq
+        echo 'Bluetooth:' && systemctl is-active bluetooth
         echo 'WiFi Interface:'
         ip addr show wlan0 | grep -E 'inet |UP'
+        echo 'Bluetooth Tethering Service:' && systemctl is-active bt-tether
+        echo 'Bluetooth Tethering Status:'
+        /usr/local/bin/bt-tether status 2>/dev/null || echo 'Not connected'
         echo 'Connected Clients:'
         iw dev wlan0 station dump | grep -c Station || echo 'No clients connected'
     " -b 2>/dev/null || echo -e "${RED}Cannot connect to Pi${NC}"
+}
+
+bt_status() {
+    print_header
+    echo -e "${YELLOW}Bluetooth Tethering Status on Pi...${NC}"
+    
+    ansible raspberry_pi -i "$INVENTORY_FILE" -m shell -a "/usr/local/bin/bt-tether status" -b
+}
+
+bt_start() {
+    print_header
+    echo -e "${YELLOW}Starting Bluetooth Tethering on Pi...${NC}"
+    
+    ansible raspberry_pi -i "$INVENTORY_FILE" -m shell -a "/usr/local/bin/bluetooth-start" -b
+}
+
+bt_stop() {
+    print_header
+    echo -e "${YELLOW}Stopping Bluetooth Tethering on Pi...${NC}"
+    
+    ansible raspberry_pi -i "$INVENTORY_FILE" -m shell -a "/usr/local/bin/bluetooth-stop" -b
+}
+
+bt_logs() {
+    print_header
+    echo -e "${YELLOW}Bluetooth Tethering Logs (last 20 lines)...${NC}"
+    
+    ansible raspberry_pi -i "$INVENTORY_FILE" -m shell -a "tail -20 /var/log/bt-tether-auto.log" -b
 }
 
 # Main script logic
@@ -184,6 +220,22 @@ case "${1:-help}" in
     status)
         check_requirements
         check_status
+        ;;
+    bt-start)
+        check_requirements
+        bt_start
+        ;;
+    bt-stop)
+        check_requirements
+        bt_stop
+        ;;
+    bt-status)
+        check_requirements
+        bt_status
+        ;;
+    bt-logs)
+        check_requirements
+        bt_logs
         ;;
     help|*)
         print_usage

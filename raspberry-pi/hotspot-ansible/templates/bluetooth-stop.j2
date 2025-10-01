@@ -1,0 +1,7 @@
+#!/bin/bash
+echo "Stopping Bluetooth tethering..."
+sudo systemctl stop bt-tether
+sudo systemctl disable bt-tether
+sudo systemctl stop bluetooth
+sudo systemctl disable bluetooth
+echo "Bluetooth tethering stopped and disabled"

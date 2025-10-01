@@ -161,23 +161,8 @@
         - kuka-hotspot
 
     - name: Create hotspot status check script
-      copy:
-        content: |
-          #!/bin/bash
-          echo "=== Hotspot Status ==="
-          echo "Hostapd: $(systemctl is-active hostapd)"
-          echo "Dnsmasq: $(systemctl is-active dnsmasq)"
-          echo "KUKA Hotspot Service: $(systemctl is-active kuka-hotspot)"
-          echo
-          echo "=== Network Info ==="
-          ip addr show {{ hotspot_interface }} | grep -E "(inet |state)"
-          echo
-          echo "=== Connected Clients ==="
-          if [ -f /var/lib/dhcp/dhcpd.leases ]; then
-              cat /var/lib/dhcp/dhcpd.leases | grep "lease\|client-hostname\|binding state active" | tail -10
-          else
-              echo "No DHCP leases file found"
-          fi
+      template:
+        src: hotspot-status.j2
         dest: /usr/local/bin/hotspot-status
         owner: root
         group: root
@@ -206,6 +191,86 @@
       systemd:
         daemon_reload: yes
 
+    - name: restart bluetooth
+      systemd:
+        name: bluetooth
+        state: restarted
+
+    # Bluetooth Tethering Configuration
+    - name: Enable Bluetooth service
+      systemd:
+        name: bluetooth
+        enabled: yes
+        state: started
+
+    - name: Configure Bluetooth for tethering - discoverable mode
+      lineinfile:
+        path: /etc/bluetooth/main.conf
+        regexp: '^#?DiscoverableTimeout'
+        line: 'DiscoverableTimeout = 0'
+
+    - name: Configure Bluetooth for tethering - pairable mode
+      lineinfile:
+        path: /etc/bluetooth/main.conf
+        regexp: '^#?PairableTimeout'
+        line: 'PairableTimeout = 0'
+
+    - name: Add Bluetooth PAN (Personal Area Network) support
+      lineinfile:
+        path: /etc/bluetooth/main.conf
+        regexp: '^#?Class'
+        line: 'Class = 0x020300'
+      notify:
+        - restart bluetooth
+
+    - name: Create automatic Bluetooth tethering daemon
+      template:
+        src: bt-tether.j2
+        dest: /usr/local/bin/bt-tether
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create automatic Bluetooth tethering systemd service
+      template:
+        src: bt-tether.service.j2
+        dest: /etc/systemd/system/bt-tether.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload systemd
+
+    - name: Create Bluetooth start script
+      template:
+        src: bluetooth-start.j2
+        dest: /usr/local/bin/bluetooth-start
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create Bluetooth stop script
+      template:
+        src: bluetooth-stop.j2
+        dest: /usr/local/bin/bluetooth-stop
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create Bluetooth status script
+      template:
+        src: bluetooth-status.j2
+        dest: /usr/local/bin/bluetooth-status
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Enable Bluetooth tethering service (but don't start yet)
+      systemd:
+        name: bt-tether
+        enabled: yes
+        daemon_reload: yes
+
   post_tasks:
     - name: Display connection information
       debug:
@@ -229,8 +294,21 @@
           • {{ domain }}
           {% endfor %}
           
+          Zero-Config Bluetooth Tethering:
+          • Automatically discovers and connects to any device offering internet
+          • No manual pairing or MAC addresses needed
+          • Continuously monitors and reconnects as needed
+          • Check status: bt-tether status
+          • View logs: tail -f /var/log/bt-tether-auto.log
+          
+          Bluetooth Controls:
+          • Start tethering: /usr/local/bin/bluetooth-start
+          • Stop tethering: /usr/local/bin/bluetooth-stop
+          • Check status: /usr/local/bin/bluetooth-status
+          
           Next Steps:
           1. Reboot the Pi: sudo reboot
-          2. Start services: sudo systemctl start hostapd dnsmasq
-          3. Test connection from another device
+          2. Enable Bluetooth tethering on your laptop/phone
+          3. Pi will automatically discover and connect
+          4. Test connection from another device
           ========================================

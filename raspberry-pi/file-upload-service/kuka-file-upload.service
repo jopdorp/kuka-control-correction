@@ -1,0 +1,21 @@
+[Unit]
+Description=KUKA File Upload Web Service
+After=network.target
+Requires=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/kuka-control-correction/raspberry-pi/src
+ExecStart=/usr/bin/python3 /home/pi/kuka-control-correction/raspberry-pi/src/kuka_file_upload_service.py --kuka-ip 192.168.1.50 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment=PYTHONPATH=/home/pi/kuka-control-correction/raspberry-pi/src
+
+[Install]
+WantedBy=multi-user.target

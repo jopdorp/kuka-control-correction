@@ -28,12 +28,13 @@ The system consists of two main components:
 ## Key Features
 
 - **Continuous position correction** at device speed (~12ms SPS rate) with low-pass filtering
-- **ArUco marker-based** visual tracking system  
+- **ChArUco marker-based** visual tracking system  
 - **Direct TCP communication** eliminating intermediate hardware
 - **VKRC2 compatible** KRL implementation using SPS background tasks
 - **Configurable safety limits** and filter tuning
 - **Multi-marker support** for improved accuracy and redundancy
 - **Non-intrusive integration** with existing KUKA programs
+- **Web-based file upload service** for easy deployment of KRL programs to KUKA controller
 
 ## Directory Structure
 
@@ -98,6 +99,28 @@ python3 test_webcam_aruco.py
 # or with verbose logging:
 ./start_tracking.py --verbose
 ```
+
+### Optional: File Upload Web Service
+
+Deploy a web-based file upload service to easily transfer KRL programs to the KUKA controller:
+
+```bash
+# Install and start the file upload service
+./setup-file-upload-service.sh 192.168.1.50 8000 install
+
+# Access web interface at: http://raspberry-pi-ip:8000
+# Drag and drop .src, .dat, and other KRL files for upload
+
+# Test the service
+python3 test_file_upload_service.py --kuka-ip 192.168.1.50
+
+# Manage the service
+./setup-file-upload-service.sh status   # Check status
+./setup-file-upload-service.sh logs     # View logs
+./setup-file-upload-service.sh stop     # Stop service
+```
+
+See `FILE_UPLOAD_SERVICE.md` for detailed configuration and usage instructions.
 
 ### 3. KUKA Controller Setup
 

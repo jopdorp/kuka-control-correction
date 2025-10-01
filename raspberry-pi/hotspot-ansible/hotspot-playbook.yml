@@ -1,0 +1,236 @@
+---
+- name: Setup WiFi Hotspot on Raspberry Pi
+  hosts: raspberry_pi
+  become: yes
+  vars_files:
+    - secrets.yml
+  vars:
+    hotspot_interface: "wlan0"
+    # Use secrets from encrypted file
+    hotspot_ssid: "{{ wifi_hotspot.ssid }}"
+    hotspot_password: "{{ wifi_hotspot.password }}"
+    hotspot_ip: "{{ network.hotspot_ip }}"
+    hotspot_dhcp_range_start: "{{ network.dhcp_range_start }}"
+    hotspot_dhcp_range_end: "{{ network.dhcp_range_end }}"
+    hotspot_channel: "{{ network.channel }}"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages for hotspot
+      apt:
+        name:
+          - hostapd
+          - dnsmasq
+          - iptables-persistent
+        state: present
+
+    - name: Stop services while configuring
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - hostapd
+        - dnsmasq
+
+    - name: Disable NetworkManager management of wlan0 for hostapd
+      lineinfile:
+        path: /etc/NetworkManager/NetworkManager.conf
+        line: "unmanaged-devices=interface-name:{{ hotspot_interface }}"
+        insertafter: '\[keyfile\]'
+        create: yes
+      notify:
+        - restart NetworkManager
+
+    - name: Set static IP for hotspot interface
+      shell: |
+        ip addr flush dev {{ hotspot_interface }}
+        ip addr add {{ hotspot_ip }}/24 dev {{ hotspot_interface }}
+        ip link set {{ hotspot_interface }} up
+      notify:
+        - restart NetworkManager
+
+    - name: Create hostapd configuration
+      template:
+        src: hostapd.conf.j2
+        dest: /etc/hostapd/hostapd.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      notify:
+        - restart hostapd
+
+    - name: Configure hostapd daemon path
+      lineinfile:
+        path: /etc/default/hostapd
+        regexp: '^#?DAEMON_CONF='
+        line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+        backup: yes
+
+    - name: Backup original dnsmasq config
+      copy:
+        src: /etc/dnsmasq.conf
+        dest: /etc/dnsmasq.conf.orig
+        remote_src: yes
+        force: no
+
+    - name: Create dnsmasq configuration
+      template:
+        src: dnsmasq.conf.j2
+        dest: /etc/dnsmasq.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      notify:
+        - restart dnsmasq
+
+    - name: Enable IP forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        sysctl_set: yes
+        state: present
+        reload: yes
+
+    - name: Configure iptables for NAT (internet sharing)
+      iptables:
+        table: nat
+        chain: POSTROUTING
+        out_interface: eth0
+        jump: MASQUERADE
+      notify:
+        - save iptables
+
+    - name: Configure iptables forwarding rules - RELATED,ESTABLISHED
+      iptables:
+        chain: FORWARD
+        in_interface: eth0
+        out_interface: "{{ hotspot_interface }}"
+        ctstate: RELATED,ESTABLISHED
+        jump: ACCEPT
+      notify:
+        - save iptables
+
+    - name: Configure iptables forwarding rules - wlan to eth
+      iptables:
+        chain: FORWARD
+        in_interface: "{{ hotspot_interface }}"
+        out_interface: eth0
+        jump: ACCEPT
+      notify:
+        - save iptables
+
+    - name: Create hotspot control script
+      template:
+        src: hotspot-control.sh.j2
+        dest: /usr/local/bin/hotspot-control
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create systemd service for hotspot
+      template:
+        src: kuka-hotspot.service.j2
+        dest: /etc/systemd/system/kuka-hotspot.service
+        owner: root
+        group: root
+        mode: '0644'
+      notify:
+        - reload systemd
+
+    - name: Unmask hostapd service (in case it's masked)
+      systemd:
+        name: hostapd
+        masked: no
+        daemon_reload: yes
+
+    - name: Enable hotspot services (but don't start yet)
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        daemon_reload: yes
+      loop:
+        - hostapd
+        - dnsmasq
+        - kuka-hotspot
+
+    - name: Create hotspot status check script
+      copy:
+        content: |
+          #!/bin/bash
+          echo "=== Hotspot Status ==="
+          echo "Hostapd: $(systemctl is-active hostapd)"
+          echo "Dnsmasq: $(systemctl is-active dnsmasq)"
+          echo "KUKA Hotspot Service: $(systemctl is-active kuka-hotspot)"
+          echo
+          echo "=== Network Info ==="
+          ip addr show {{ hotspot_interface }} | grep -E "(inet |state)"
+          echo
+          echo "=== Connected Clients ==="
+          if [ -f /var/lib/dhcp/dhcpd.leases ]; then
+              cat /var/lib/dhcp/dhcpd.leases | grep "lease\|client-hostname\|binding state active" | tail -10
+          else
+              echo "No DHCP leases file found"
+          fi
+        dest: /usr/local/bin/hotspot-status
+        owner: root
+        group: root
+        mode: '0755'
+
+  handlers:
+    - name: restart NetworkManager
+      systemd:
+        name: NetworkManager
+        state: restarted
+
+    - name: restart hostapd
+      systemd:
+        name: hostapd
+        state: restarted
+
+    - name: restart dnsmasq
+      systemd:
+        name: dnsmasq
+        state: restarted
+
+    - name: save iptables
+      shell: iptables-save > /etc/iptables/rules.v4
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+  post_tasks:
+    - name: Display connection information
+      debug:
+        msg: |
+          ========================================
+          WiFi Hotspot Setup Complete!
+          ========================================
+          
+          Connection Details:
+          • WiFi Network: {{ hotspot_ssid }}
+          • Password: {{ hotspot_password }}
+          • Pi IP Address: {{ hotspot_ip }}
+          
+          Access Services:
+          • File Upload: http://kukacam:{{ services.file_upload_port }}
+          • File Upload: http://kukacontrol:{{ services.file_upload_port }}
+          • SSH to Pi: ssh pi@{{ hotspot_ip }}
+          
+          Custom Domains (all point to Pi):
+          {% for domain in dns_domains.keys() %}
+          • {{ domain }}
+          {% endfor %}
+          
+          Next Steps:
+          1. Reboot the Pi: sudo reboot
+          2. Start services: sudo systemctl start hostapd dnsmasq
+          3. Test connection from another device
+          ========================================

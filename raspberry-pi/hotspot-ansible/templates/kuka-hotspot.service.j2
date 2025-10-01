@@ -1,0 +1,15 @@
+[Unit]
+Description=KUKA WiFi Hotspot Service
+After=network.target
+Wants=hostapd.service dnsmasq.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/hotspot-control start
+ExecStop=/usr/local/bin/hotspot-control stop
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

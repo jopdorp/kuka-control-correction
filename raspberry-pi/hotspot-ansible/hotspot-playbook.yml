@@ -35,24 +35,58 @@
         - dnsmasq
       ignore_errors: yes
 
+    - name: Ensure wlan0 is in managed mode (not AP mode)
+      shell: |
+        # Bring interface down, remove IP, bring back up for client mode
+        ip link set {{ hotspot_interface }} down
+        ip addr flush dev {{ hotspot_interface }}
+        ip link set {{ hotspot_interface }} up
+      ignore_errors: yes
+
     - name: Ensure NetworkManager can manage wlan0 (remove unmanaged setting)
       lineinfile:
         path: /etc/NetworkManager/NetworkManager.conf
         regexp: '^unmanaged-devices=interface-name:{{ hotspot_interface }}'
         state: absent
+      register: nm_config_changed
 
-    - name: Restart NetworkManager to apply changes
+    - name: Restart NetworkManager to pick up wlan0
       systemd:
         name: NetworkManager
         state: restarted
 
-    - name: Wait for NetworkManager to settle
+    - name: Wait for NetworkManager to settle and wlan0 to be ready
       pause:
-        seconds: 3
+        seconds: 5
+
+    - name: Explicitly set wlan0 to managed mode
+      shell: nmcli device set {{ hotspot_interface }} managed yes
+      ignore_errors: yes
+
+    - name: Wait for wlan0 to become available
+      pause:
+        seconds: 2
+
+    - name: Ensure wlan0 is ready for scanning
+      shell: |
+        # Wait for device to be available
+        for i in {1..10}; do
+          if nmcli device status | grep -q "wlan0.*disconnected"; then
+            break
+          fi
+          sleep 1
+        done
+      changed_when: false
+      when: nm_config_changed.changed
 
     - name: Scan for WiFi networks
-      shell: nmcli device wifi rescan
+      shell: nmcli device wifi rescan ifname {{ hotspot_interface }}
       changed_when: false
+      retries: 5
+      delay: 3
+      register: wifi_scan
+      until: wifi_scan.rc == 0
+      ignore_errors: yes
 
     - name: Wait for scan to complete
       pause:
@@ -62,12 +96,23 @@
       shell: |
         # Remove any existing connection with this name
         nmcli connection delete "{{ external_hotspot_name }}" 2>/dev/null || true
-        # Create new WiFi client connection
+        # Create new WiFi client connection and wait for it
         nmcli device wifi connect "{{ external_hotspot_name }}" password "{{ external_hotspot_password }}" ifname {{ hotspot_interface }}
       register: wifi_connect
       retries: 3
       delay: 5
       until: wifi_connect.rc == 0
+
+    - name: Wait for DHCP and network configuration
+      pause:
+        seconds: 5
+
+    - name: Verify internet connectivity
+      shell: ping -c 2 8.8.8.8
+      register: internet_check
+      retries: 3
+      delay: 3
+      until: internet_check.rc == 0
 
     - name: Wait for internet connectivity
       wait_for:
@@ -135,12 +180,6 @@
             fi
       when: "'NetworkManager.service' not in ansible_facts.services"
 
-    - name: De-prefer Wi-Fi default route if present (ensure eth0 preferred)
-      shell: |
-        if ip route | grep -q "^default .* dev {{ hotspot_interface }}"; then
-          ip route del default dev {{ hotspot_interface }} || true
-        fi
-
     - name: Install required packages for hotspot
       apt:
         name:
@@ -148,6 +187,88 @@
           - dnsmasq
           - iptables-persistent
         state: present
+
+    # ===== Phase 3: Install Docker and setup project =====
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    - name: Add Docker GPG key
+      shell: |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+      args:
+        creates: /etc/apt/keyrings/docker.asc
+
+    - name: Add Docker repository
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      args:
+        creates: /etc/apt/sources.list.d/docker.list
+
+    - name: Update apt cache after adding Docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install Docker and Docker Compose
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Add pi user to docker group
+      user:
+        name: pi
+        groups: docker
+        append: yes
+
+    - name: Ensure git is installed
+      apt:
+        name: git
+        state: present
+
+    - name: Check if kuka-control-correction repo exists
+      stat:
+        path: /home/pi/kuka-control-correction
+      register: repo_exists
+
+    - name: Clone kuka-control-correction repository
+      become: yes
+      become_user: pi
+      git:
+        repo: 'https://github.com/jopdorp/kuka-control-correction.git'
+        dest: /home/pi/kuka-control-correction
+        version: main
+        force: yes
+      when: not repo_exists.stat.exists
+
+    - name: Pull latest changes from main branch
+      become: yes
+      become_user: pi
+      git:
+        repo: 'https://github.com/jopdorp/kuka-control-correction.git'
+        dest: /home/pi/kuka-control-correction
+        version: main
+        update: yes
+      when: repo_exists.stat.exists
+
+    - name: Start file upload service with Docker Compose
+      become: yes
+      become_user: pi
+      community.docker.docker_compose_v2:
+        project_src: /home/pi/kuka-control-correction/raspberry-pi/file-upload-service
+        state: present
+      environment:
+        DOCKER_HOST: unix:///var/run/docker.sock
 
     - name: Stop services while configuring
       systemd:
@@ -283,16 +404,16 @@
         masked: no
         daemon_reload: yes
 
-    - name: Enable kuka-hotspot service (manages hostapd and dnsmasq)
+    - name: Enable kuka-hotspot service (sets wlan0 IP before hostapd/dnsmasq)
       systemd:
         name: kuka-hotspot
         enabled: yes
         daemon_reload: yes
         
-    - name: Ensure hostapd and dnsmasq are disabled (managed by kuka-hotspot)
+    - name: Enable hostapd and dnsmasq to start on boot (after kuka-hotspot)
       systemd:
         name: "{{ item }}"
-        enabled: no
+        enabled: yes
         daemon_reload: yes
       loop:
         - hostapd
@@ -323,13 +444,21 @@
         ip addr add {{ hotspot_ip }}/24 dev {{ hotspot_interface }}
         ip link set {{ hotspot_interface }} up
 
-    - name: Start Pi's hotspot services
+    - name: Start hostapd
       systemd:
-        name: "{{ item }}"
+        name: hostapd
         state: started
-      loop:
-        - hostapd
-        - dnsmasq
+        enabled: yes
+
+    - name: Wait for hostapd to initialize
+      pause:
+        seconds: 2
+
+    - name: Start dnsmasq
+      systemd:
+        name: dnsmasq
+        state: started
+        enabled: yes
 
     - name: Wait for hotspot to be ready
       wait_for:
@@ -347,9 +476,12 @@
           • Password: {{ hotspot_password }}
           • Pi IP: {{ hotspot_ip }}
           
-          🌐 Access via these domains:
-          • http://kuka.drop:{{ services.file_upload_port }}
-          • ssh pi@kuka.drop
+          🌐 Access services:
+          • File Upload: http://{{ hotspot_ip }}:{{ services.file_upload_port }}
+          • SSH to Pi: ssh pi@{{ hotspot_ip }}
+          
+          🐳 Docker services running:
+          • File upload service (port {{ services.file_upload_port }})
           
           🔧 Control the hotspot on the Pi:
           • sudo hotspot-control start
@@ -361,6 +493,8 @@
           
           📡 Switch back to hotspot mode:
           • sudo wifi-mode hotspot
+          
+          📂 Project location: /home/pi/kuka-control-correction
 
   handlers:
     - name: restart NetworkManager
@@ -399,16 +533,19 @@
           • Pi IP Address: {{ hotspot_ip }}
           
           Access Services:
-          • File Upload: http://kuka.drop:{{ services.file_upload_port }}
-          • SSH to Pi: ssh pi@kuka.drop
-          • Direct IP: {{ hotspot_ip }}
+          • File Upload: http://{{ hotspot_ip }}:{{ services.file_upload_port }}
+          • SSH to Pi: ssh pi@{{ hotspot_ip }}
           
-          Custom Domains (all point to Pi):
-          {% for domain in dns_domains.keys() %}
-          • {{ domain }}
-          {% endfor %}
+          🐳 Docker Services:
+          • File upload service running on port {{ services.file_upload_port }}
+          • Project: /home/pi/kuka-control-correction
+          
+          Management Commands:
+          • Switch to internet: sudo wifi-mode internet
+          • Switch to hotspot: sudo wifi-mode hotspot
+          • Hotspot control: sudo hotspot-control [start|stop|status]
           
           Next Steps:
-          1. Reboot the Pi: sudo reboot
-          2. Test connection from another device
+          1. Test connection from your laptop
+          2. Access file upload at http://{{ hotspot_ip }}:{{ services.file_upload_port }}
           ========================================

@@ -9,6 +9,8 @@ This Ansible playbook sets up a WiFi hotspot on a Raspberry Pi with encrypted se
 - 📡 **WiFi Hotspot** with configurable SSID/password
 - 🔧 **Service management** scripts included
 - 🔄 **Mode Switching** - Easy switch between internet mode (phone hotspot) and hotspot mode (Pi broadcasts)
+- 🐳 **Docker Integration** - Automatically installs Docker and starts the file upload service
+- 📂 **Auto-deployment** - Clones and updates the kuka-control-correction repository
 
 ## Prerequisites
 

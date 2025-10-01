@@ -1,12 +1,20 @@
 [Unit]
 Description=KUKA WiFi Hotspot Service
 After=network.target
+Before=hostapd.service dnsmasq.service
 Wants=hostapd.service dnsmasq.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/hotspot-control start
+# Ensure wlan0 has IP before hostapd/dnsmasq start
+ExecStartPre=/usr/sbin/ip link set {{ hotspot_interface }} up
+ExecStartPre=/usr/sbin/ip addr flush dev {{ hotspot_interface }}
+ExecStartPre=/usr/sbin/ip addr add {{ hotspot_ip }}/24 dev {{ hotspot_interface }}
+ExecStart=/bin/sleep 1
+ExecStartPost=/usr/bin/systemctl start hostapd.service
+ExecStartPost=/bin/sleep 2
+ExecStartPost=/usr/bin/systemctl start dnsmasq.service
 ExecStop=/usr/local/bin/hotspot-control stop
 TimeoutStartSec=30
 TimeoutStopSec=30

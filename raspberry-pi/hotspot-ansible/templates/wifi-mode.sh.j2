@@ -1,0 +1,191 @@
+#!/bin/bash
+# WiFi Mode Switcher for KUKA Pi
+# Switch between Internet Mode (connect to phone) and Hotspot Mode (broadcast own hotspot)
+
+set -e
+
+INTERFACE="{{ hotspot_interface }}"
+HOTSPOT_IP="{{ hotspot_ip }}"
+HOTSPOT_SSID="{{ hotspot_ssid }}"
+EXTERNAL_HOTSPOT="{{ external_hotspot_name }}"
+EXTERNAL_PASSWORD="{{ external_hotspot_password }}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+print_usage() {
+    echo -e "${BLUE}WiFi Mode Switcher${NC}"
+    echo
+    echo "Usage: $0 [mode]"
+    echo
+    echo "Modes:"
+    echo "  internet  - Connect to external hotspot (phone) for internet access"
+    echo "  hotspot   - Enable Pi's own hotspot for robot system"
+    echo "  status    - Show current WiFi status"
+    echo
+    echo "Examples:"
+    echo "  sudo wifi-mode internet   # Connect to phone for apt updates"
+    echo "  sudo wifi-mode hotspot    # Enable Pi hotspot for robot"
+    echo "  sudo wifi-mode status     # Check current mode"
+}
+
+check_root() {
+    if [ "$EUID" -ne 0 ]; then 
+        echo -e "${RED}Error: Must run as root${NC}"
+        echo "Use: sudo wifi-mode [mode]"
+        exit 1
+    fi
+}
+
+switch_to_internet() {
+    echo -e "${YELLOW}🌐 Switching to Internet Mode...${NC}"
+    echo
+    
+    # Stop hotspot services
+    echo "Stopping hotspot services..."
+    systemctl stop hostapd 2>/dev/null || true
+    systemctl stop dnsmasq 2>/dev/null || true
+    
+    # Flush IP from wlan0
+    echo "Clearing wlan0 configuration..."
+    ip addr flush dev $INTERFACE 2>/dev/null || true
+    
+    # Re-enable NetworkManager management
+    echo "Enabling NetworkManager control..."
+    nmcli device set $INTERFACE managed yes
+    
+    # Wait a moment for device to be ready
+    sleep 2
+    
+    # Connect to external hotspot
+    echo "Connecting to $EXTERNAL_HOTSPOT..."
+    nmcli connection delete "$EXTERNAL_HOTSPOT" 2>/dev/null || true
+    nmcli device wifi connect "$EXTERNAL_HOTSPOT" password "$EXTERNAL_PASSWORD" ifname $INTERFACE
+    
+    # Wait for connection
+    sleep 3
+    
+    # Check if connected
+    if nmcli -t -f DEVICE,STATE device | grep "^$INTERFACE:connected" >/dev/null; then
+        echo
+        echo -e "${GREEN}✅ Internet Mode Enabled!${NC}"
+        echo
+        echo "Connected to: $EXTERNAL_HOTSPOT"
+        echo "IP Address: $(ip -4 addr show $INTERFACE | grep inet | awk '{print $2}')"
+        echo
+        echo "You now have internet access for:"
+        echo "  • apt update && apt upgrade"
+        echo "  • pip install packages"
+        echo "  • git operations"
+        echo
+        echo -e "${YELLOW}To switch back to hotspot mode:${NC}"
+        echo "  sudo wifi-mode hotspot"
+    else
+        echo -e "${RED}❌ Failed to connect to $EXTERNAL_HOTSPOT${NC}"
+        echo "Check if the phone hotspot is active and in range."
+        exit 1
+    fi
+}
+
+switch_to_hotspot() {
+    echo -e "${YELLOW}📡 Switching to Hotspot Mode...${NC}"
+    echo
+    
+    # Disconnect from external hotspot
+    echo "Disconnecting from external networks..."
+    nmcli connection down "$EXTERNAL_HOTSPOT" 2>/dev/null || true
+    nmcli connection delete "$EXTERNAL_HOTSPOT" 2>/dev/null || true
+    
+    # Disable NetworkManager management
+    echo "Disabling NetworkManager control of $INTERFACE..."
+    nmcli device set $INTERFACE managed no
+    
+    # Wait a moment
+    sleep 2
+    
+    # Set static IP
+    echo "Configuring $INTERFACE with static IP..."
+    ip addr flush dev $INTERFACE
+    ip addr add $HOTSPOT_IP/24 dev $INTERFACE
+    ip link set $INTERFACE up
+    
+    # Start hostapd
+    echo "Starting hostapd..."
+    systemctl start hostapd
+    sleep 2
+    
+    # Start dnsmasq
+    echo "Starting dnsmasq..."
+    systemctl start dnsmasq
+    sleep 2
+    
+    # Check if services are running
+    if systemctl is-active --quiet hostapd && systemctl is-active --quiet dnsmasq; then
+        echo
+        echo -e "${GREEN}✅ Hotspot Mode Enabled!${NC}"
+        echo
+        echo "Broadcasting: $HOTSPOT_SSID"
+        echo "Pi IP: $HOTSPOT_IP"
+        echo "Access at: http://kuka.drop:8000"
+        echo
+        echo "Connected clients: $(iw dev $INTERFACE station dump | grep -c Station || echo 0)"
+        echo
+        echo -e "${YELLOW}To switch back to internet mode:${NC}"
+        echo "  sudo wifi-mode internet"
+    else
+        echo -e "${RED}❌ Failed to start hotspot services${NC}"
+        echo "Check logs with: journalctl -u hostapd -u dnsmasq -n 50"
+        exit 1
+    fi
+}
+
+show_status() {
+    echo -e "${BLUE}📊 Current WiFi Status${NC}"
+    echo
+    
+    # Check if hostapd is running
+    if systemctl is-active --quiet hostapd; then
+        echo -e "${GREEN}Mode: HOTSPOT${NC}"
+        echo "Broadcasting: $HOTSPOT_SSID"
+        echo "Pi IP: $(ip -4 addr show $INTERFACE | grep inet | awk '{print $2}')"
+        echo "Hostapd: $(systemctl is-active hostapd)"
+        echo "Dnsmasq: $(systemctl is-active dnsmasq)"
+        echo "Connected clients: $(iw dev $INTERFACE station dump | grep -c Station || echo 0)"
+    # Check if connected to external network
+    elif nmcli -t -f DEVICE,STATE device | grep "^$INTERFACE:connected" >/dev/null; then
+        echo -e "${GREEN}Mode: INTERNET${NC}"
+        CONNECTED_SSID=$(nmcli -t -f DEVICE,SSID device wifi list ifname $INTERFACE | grep "^$INTERFACE:" | head -1 | cut -d: -f2)
+        echo "Connected to: $CONNECTED_SSID"
+        echo "IP Address: $(ip -4 addr show $INTERFACE | grep inet | awk '{print $2}')"
+        echo "Gateway: $(ip route | grep default | grep $INTERFACE | awk '{print $3}')"
+    else
+        echo -e "${YELLOW}Mode: UNKNOWN / DISCONNECTED${NC}"
+        echo "Interface: $INTERFACE"
+        echo "State: $(nmcli -t -f DEVICE,STATE device | grep "^$INTERFACE:" | cut -d: -f2)"
+    fi
+    echo
+    echo "Interface details:"
+    iw dev $INTERFACE info | grep -E "Interface|ssid|type|channel"
+}
+
+# Main script
+case "${1:-status}" in
+    internet)
+        check_root
+        switch_to_internet
+        ;;
+    hotspot)
+        check_root
+        switch_to_hotspot
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        print_usage
+        exit 1
+        ;;
+esac

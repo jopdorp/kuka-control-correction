@@ -21,7 +21,7 @@ case "$1" in
             echo "   SSID: {{ hotspot_ssid }}"
             echo "   Password: {{ hotspot_password }}"
             echo "   Pi IP: {{ hotspot_ip }}"
-            echo "   Upload Service: http://{{ hotspot_ip }}:8000"
+            echo "   Upload Service: http://kuka.drop:8000 or http://{{ hotspot_ip }}:8000"
         else
             echo "❌ Failed to start hotspot services"
             echo "Check status with: systemctl status hostapd dnsmasq"
@@ -92,7 +92,7 @@ case "$1" in
         echo "After starting, connect to:"
         echo "  SSID: {{ hotspot_ssid }}"
         echo "  Password: {{ hotspot_password }}"
-        echo "  Access upload service: http://{{ hotspot_ip }}:8000"
+        echo "  Access upload service: http://kuka.drop:8000 or http://{{ hotspot_ip }}:8000"
         exit 1
         ;;
 esac

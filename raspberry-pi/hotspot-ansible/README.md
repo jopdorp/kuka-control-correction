@@ -5,9 +5,10 @@ This Ansible playbook sets up a WiFi hotspot on a Raspberry Pi with encrypted se
 ## Features
 
 - 🔒 **Encrypted secrets** using Ansible Vault
-- 🌐 **Custom DNS** - Pi responds to `kukacam`, `kukacontrol`, and `krcpc` domains
+- 🌐 **Custom DNS** - Pi responds to `kuka.drop` and controller to `krcpc` domain
 - 📡 **WiFi Hotspot** with configurable SSID/password
 - 🔧 **Service management** scripts included
+- 🔄 **Mode Switching** - Easy switch between internet mode (phone hotspot) and hotspot mode (Pi broadcasts)
 
 ## Prerequisites
 
@@ -43,6 +44,12 @@ ssh pi@kukacam  # Replace with your Pi's IP
    ```bash
    ./manage-hotspot.sh edit-secrets
    ```
+   
+   Configure these settings in secrets.yml:
+   - `wifi_hotspot.ssid`: Your Pi's hotspot name (default: KUKA-Control)
+   - `wifi_hotspot.password`: Password for connecting to Pi's hotspot
+   - `external_hotspot.name`: Your phone's hotspot name (for internet access)
+   - `external_hotspot.password`: Your phone's hotspot password
 
 4. **Deploy the hotspot:**
    ```bash
@@ -71,10 +78,12 @@ sudo hotspot-control start
 - **Pi IP:** `192.168.4.1`
 
 ### Access Services via Custom Domains:
-- **File Upload:** http://kukacam:8000 or http://kukacontrol:8000
-- **SSH to Pi:** `ssh pi@kukacam`
-- **KUKA Controller:** `ping krcpc`
+- **File Upload:** http://kuka.drop:8000
+- **SSH to Pi:** `ssh pi@kuka.drop`
+- **KUKA Controller:** `ping krcpc` or `ssh krcpc`
 - **Direct IP:** http://192.168.4.1:8000
+
+> 💡 **Note:** The `.drop` TLD is a special-use domain that provides better browser compatibility than custom TLDs like `.local`
 
 ### Management Commands:
 ```bash
@@ -98,15 +107,60 @@ sudo hotspot-control start
 ```
 
 ### On the Pi (after setup):
+
+#### Switch Between Modes
+
+The Pi can operate in two modes (both use wlan0, so only one at a time):
+
+**Hotspot Mode** (default): Pi broadcasts its own WiFi network for the robot system
+```bash
+sudo wifi-mode hotspot
+```
+
+**Internet Mode**: Pi connects to your phone's hotspot for updates/downloads
+```bash
+sudo wifi-mode internet
+```
+
+**Check Current Mode**:
+```bash
+sudo wifi-mode status
+```
+
+#### Basic Service Management
 ```bash
 # Check service status
 sudo systemctl status hostapd dnsmasq
 
-# Restart services
-sudo systemctl restart hostapd dnsmasq
+# Manual service control (for advanced users)
+sudo hotspot-control start
+sudo hotspot-control stop
+sudo hotspot-control status
 
 # View connected clients
 sudo iw dev wlan0 station dump
+```
+
+## Typical Workflow
+
+### 1. During Development (need internet for updates):
+```bash
+# On the Pi
+sudo wifi-mode internet
+
+# Now you have internet access for:
+sudo apt update && sudo apt upgrade
+pip3 install some-package
+git pull
+```
+
+### 2. During Operation (robot needs to connect):
+```bash
+# On the Pi
+sudo wifi-mode hotspot
+
+# Now your laptop can connect to KUKA-Control WiFi
+# Access services at http://kuka.drop:8000
 ```
 
 ## Customization

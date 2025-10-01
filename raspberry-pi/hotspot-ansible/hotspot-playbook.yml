@@ -13,6 +13,9 @@
     hotspot_dhcp_range_start: "{{ network.dhcp_range_start }}"
     hotspot_dhcp_range_end: "{{ network.dhcp_range_end }}"
     hotspot_channel: "{{ network.channel }}"
+    # External hotspot (phone) for internet access during setup
+    external_hotspot_name: "{{ external_hotspot.name }}"
+    external_hotspot_password: "{{ external_hotspot.password }}"
     # Wired network (eth0) configuration for Pi
     pi_eth_interface: "eth0"
     pi_eth_ip: "192.168.14.11"
@@ -23,6 +26,55 @@
     krcpc_ip: "192.168.14.70"
 
   tasks:
+    - name: Stop Pi's hotspot services if running
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - hostapd
+        - dnsmasq
+      ignore_errors: yes
+
+    - name: Ensure NetworkManager can manage wlan0 (remove unmanaged setting)
+      lineinfile:
+        path: /etc/NetworkManager/NetworkManager.conf
+        regexp: '^unmanaged-devices=interface-name:{{ hotspot_interface }}'
+        state: absent
+
+    - name: Restart NetworkManager to apply changes
+      systemd:
+        name: NetworkManager
+        state: restarted
+
+    - name: Wait for NetworkManager to settle
+      pause:
+        seconds: 3
+
+    - name: Scan for WiFi networks
+      shell: nmcli device wifi rescan
+      changed_when: false
+
+    - name: Wait for scan to complete
+      pause:
+        seconds: 2
+
+    - name: Connect to external hotspot for internet access
+      shell: |
+        # Remove any existing connection with this name
+        nmcli connection delete "{{ external_hotspot_name }}" 2>/dev/null || true
+        # Create new WiFi client connection
+        nmcli device wifi connect "{{ external_hotspot_name }}" password "{{ external_hotspot_password }}" ifname {{ hotspot_interface }}
+      register: wifi_connect
+      retries: 3
+      delay: 5
+      until: wifi_connect.rc == 0
+
+    - name: Wait for internet connectivity
+      wait_for:
+        host: 8.8.8.8
+        port: 53
+        timeout: 30
+      
     - name: Update apt cache
       apt:
         update_cache: yes
@@ -105,6 +157,7 @@
       loop:
         - hostapd
         - dnsmasq
+      ignore_errors: yes  # In case services don't exist yet
 
     - name: Disable NetworkManager management of wlan0 for hostapd
       lineinfile:
@@ -115,11 +168,14 @@
       notify:
         - restart NetworkManager
 
-    - name: Set static IP for hotspot interface
+    - name: Ensure wlan0 is up first
+      shell: |
+        ip link set {{ hotspot_interface }} up
+        
+    - name: Set static IP for hotspot interface (before hostapd/dnsmasq start)
       shell: |
         ip addr flush dev {{ hotspot_interface }}
         ip addr add {{ hotspot_ip }}/24 dev {{ hotspot_interface }}
-        ip link set {{ hotspot_interface }} up
       notify:
         - restart NetworkManager
 
@@ -195,6 +251,14 @@
       notify:
         - save iptables
 
+    - name: Create WiFi mode switcher script
+      template:
+        src: wifi-mode.sh.j2
+        dest: /usr/local/bin/wifi-mode
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: Create hotspot control script
       template:
         src: hotspot-control.sh.j2
@@ -219,15 +283,20 @@
         masked: no
         daemon_reload: yes
 
-    - name: Enable hotspot services (but don't start yet)
+    - name: Enable kuka-hotspot service (manages hostapd and dnsmasq)
+      systemd:
+        name: kuka-hotspot
+        enabled: yes
+        daemon_reload: yes
+        
+    - name: Ensure hostapd and dnsmasq are disabled (managed by kuka-hotspot)
       systemd:
         name: "{{ item }}"
-        enabled: yes
+        enabled: no
         daemon_reload: yes
       loop:
         - hostapd
         - dnsmasq
-        - kuka-hotspot
 
     - name: Create hotspot status check script
       template:
@@ -236,6 +305,62 @@
         owner: root
         group: root
         mode: '0755'
+
+    - name: Disconnect from external hotspot
+      shell: |
+        nmcli connection down "{{ external_hotspot_name }}" 2>/dev/null || true
+        nmcli connection delete "{{ external_hotspot_name }}" 2>/dev/null || true
+      ignore_errors: yes
+
+    - name: Stop NetworkManager management of wlan0
+      shell: |
+        nmcli device set {{ hotspot_interface }} managed no
+      ignore_errors: yes
+
+    - name: Set wlan0 IP address
+      shell: |
+        ip addr flush dev {{ hotspot_interface }}
+        ip addr add {{ hotspot_ip }}/24 dev {{ hotspot_interface }}
+        ip link set {{ hotspot_interface }} up
+
+    - name: Start Pi's hotspot services
+      systemd:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - hostapd
+        - dnsmasq
+
+    - name: Wait for hotspot to be ready
+      wait_for:
+        timeout: 5
+
+    - name: Display setup completion message
+      debug:
+        msg: |
+          ╔════════════════════════════════════════════╗
+          ║   KUKA Hotspot Setup Complete! 🎉         ║
+          ╚════════════════════════════════════════════╝
+          
+          📡 Your Pi is now broadcasting:
+          • WiFi Network: {{ hotspot_ssid }}
+          • Password: {{ hotspot_password }}
+          • Pi IP: {{ hotspot_ip }}
+          
+          🌐 Access via these domains:
+          • http://kuka.drop:{{ services.file_upload_port }}
+          • ssh pi@kuka.drop
+          
+          🔧 Control the hotspot on the Pi:
+          • sudo hotspot-control start
+          • sudo hotspot-control stop
+          • sudo hotspot-control status
+          
+          📡 Switch to internet mode (connect to your phone):
+          • sudo wifi-mode internet
+          
+          📡 Switch back to hotspot mode:
+          • sudo wifi-mode hotspot
 
   handlers:
     - name: restart NetworkManager
@@ -274,9 +399,9 @@
           • Pi IP Address: {{ hotspot_ip }}
           
           Access Services:
-          • File Upload: http://kukacam:{{ services.file_upload_port }}
-          • File Upload: http://kukacontrol:{{ services.file_upload_port }}
-          • SSH to Pi: ssh pi@{{ hotspot_ip }}
+          • File Upload: http://kuka.drop:{{ services.file_upload_port }}
+          • SSH to Pi: ssh pi@kuka.drop
+          • Direct IP: {{ hotspot_ip }}
           
           Custom Domains (all point to Pi):
           {% for domain in dns_domains.keys() %}
